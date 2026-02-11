@@ -20,6 +20,10 @@ import { generateKeypair, keypairFromWIF, type Keypair } from './identity/keypai
 import { signChallenge } from './identity/signer.js';
 import type { JobHandler, JobHandlerConfig } from './jobs/types.js';
 import type { Job } from './client/index.js';
+import type { PrivacyTier } from './privacy/tiers.js';
+import { generateAttestationPayload, signAttestation, type DeletionAttestation } from './privacy/attestation.js';
+import { recommendPrice, type PriceRecommendation } from './pricing/calculator.js';
+import type { JobCategory } from './pricing/tables.js';
 
 export interface VAPAgentConfig {
   /** VAP API base URL */
@@ -215,5 +219,102 @@ export class VAPAgent extends EventEmitter {
   /** Check if agent is currently listening for jobs */
   get isRunning(): boolean {
     return this.running;
+  }
+
+  // ------------------------------------------
+  // Privacy Tier
+  // ------------------------------------------
+
+  private privacyTier: PrivacyTier = 'standard';
+
+  /**
+   * Set the agent's privacy tier.
+   * Stores locally and updates the platform profile.
+   */
+  async setPrivacyTier(tier: PrivacyTier): Promise<void> {
+    this.privacyTier = tier;
+    await this.client.updateAgentProfile({ privacyTier: tier });
+    this.emit('privacy:updated', tier);
+  }
+
+  /** Get the current privacy tier */
+  getPrivacyTier(): PrivacyTier {
+    return this.privacyTier;
+  }
+
+  // ------------------------------------------
+  // Deletion Attestation
+  // ------------------------------------------
+
+  /**
+   * Generate, sign, and submit a deletion attestation.
+   * Call this after destroying a job's container and data.
+   * 
+   * @param jobId - The job ID
+   * @param containerId - Docker/OCI container ID that was destroyed
+   * @param dataVolumes - List of volume paths that were deleted
+   * @param deletionMethod - Method used (default: 'container-destroy+volume-rm')
+   * @returns The signed attestation
+   */
+  async attestDeletion(
+    jobId: string,
+    containerId: string,
+    dataVolumes?: string[],
+    deletionMethod?: string,
+    network: 'verus' | 'verustest' = 'verustest',
+  ): Promise<DeletionAttestation> {
+    if (!this.wif) {
+      throw new Error('WIF key required for signing attestations');
+    }
+    if (!this.identityName) {
+      throw new Error('Agent must be registered before attesting deletions');
+    }
+
+    const payload = generateAttestationPayload({
+      jobId,
+      containerId,
+      createdAt: new Date().toISOString(),
+      destroyedAt: new Date().toISOString(),
+      dataVolumes,
+      deletionMethod,
+      attestedBy: this.identityName,
+    });
+
+    const attestation = signAttestation(payload, this.wif, network);
+
+    // Submit to platform
+    await this.client.submitAttestation(attestation);
+    this.emit('attestation:submitted', attestation);
+
+    return attestation;
+  }
+
+  // ------------------------------------------
+  // Pricing
+  // ------------------------------------------
+
+  /**
+   * Estimate pricing for a job based on model, category, and token usage.
+   * Pure local calculation — no API call needed.
+   * 
+   * @param model - LLM model name
+   * @param category - Job category (trivial, simple, medium, complex, premium)
+   * @param inputTokens - Estimated input tokens (default: 2000)
+   * @param outputTokens - Estimated output tokens (default: 1000)
+   * @returns Price recommendation with min/recommended/premium/ceiling
+   */
+  estimatePrice(
+    model: string,
+    category: JobCategory,
+    inputTokens: number = 2000,
+    outputTokens: number = 1000,
+  ): PriceRecommendation {
+    return recommendPrice({
+      model,
+      inputTokens,
+      outputTokens,
+      category,
+      privacyTier: this.privacyTier,
+    });
   }
 }

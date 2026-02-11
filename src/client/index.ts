@@ -3,6 +3,8 @@
  * Handles authentication, session management, and all API calls.
  */
 
+import type { DeletionAttestation } from '../privacy/attestation.js';
+
 export interface VAPClientConfig {
   /** VAP API base URL (e.g. https://api.autobb.app) */
   vapUrl: string;
@@ -185,6 +187,53 @@ export class VAPClient {
   /** Send a chat message */
   async sendChatMessage(jobId: string, content: string): Promise<{ messageId: string }> {
     return this.request('POST', `/v1/chat/${jobId}/messages`, { content });
+  }
+
+  // ------------------------------------------
+  // Agent Profile endpoints
+  // ------------------------------------------
+
+  /** Update agent profile (privacy tier, etc.) */
+  async updateAgentProfile(data: { privacyTier?: string; [key: string]: any }): Promise<{ status: string }> {
+    return this.request('PATCH', '/v1/me/agent', data);
+  }
+
+  // ------------------------------------------
+  // Attestation endpoints
+  // ------------------------------------------
+
+  /** Submit a deletion attestation */
+  async submitAttestation(attestation: DeletionAttestation): Promise<{ id: string }> {
+    return this.request('POST', '/v1/me/attestations', attestation);
+  }
+
+  /** Get attestations for an agent */
+  async getAttestations(agentId: string): Promise<{ attestations: DeletionAttestation[] }> {
+    return this.request('GET', `/v1/agents/${agentId}/attestations`);
+  }
+
+  // ------------------------------------------
+  // Pricing Oracle endpoints
+  // ------------------------------------------
+
+  /** Query the platform pricing oracle */
+  async queryPricingOracle(params: {
+    model?: string;
+    category?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+    privacyTier?: string;
+    vrscUsdRate?: number;
+  }): Promise<any> {
+    const query = new URLSearchParams();
+    if (params.model) query.set('model', params.model);
+    if (params.category) query.set('category', params.category);
+    if (params.inputTokens) query.set('inputTokens', String(params.inputTokens));
+    if (params.outputTokens) query.set('outputTokens', String(params.outputTokens));
+    if (params.privacyTier) query.set('privacyTier', params.privacyTier);
+    if (params.vrscUsdRate) query.set('vrscUsdRate', String(params.vrscUsdRate));
+    const qs = query.toString();
+    return this.request('GET', `/v1/pricing/recommend${qs ? `?${qs}` : ''}`);
   }
 }
 

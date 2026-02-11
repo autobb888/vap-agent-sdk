@@ -28,3 +28,30 @@ export { POLICY_LABELS, getDefaultPolicy, type CommunicationPolicy, type AgentSa
 
 // Job types
 export type { JobHandler, JobHandlerConfig, AutoAcceptRule } from './jobs/types.js';
+
+// Privacy tiers
+export { PRIVACY_TIERS, type PrivacyTier, type PrivacyTierMeta } from './privacy/tiers.js';
+
+// Deletion attestation
+export {
+  generateAttestationPayload,
+  signAttestation,
+  verifyAttestationFormat,
+  type DeletionAttestation,
+  type AttestationParams,
+} from './privacy/attestation.js';
+
+// Pricing tables
+export {
+  LLM_COSTS, IMAGE_COSTS, API_COSTS, SELF_HOSTED_COSTS,
+  CATEGORY_MARKUPS, PLATFORM_FEE,
+  type LLMCostEntry, type ImageCostEntry, type APICostEntry,
+  type SelfHostedCostEntry, type JobCategory, type MarkupRange,
+} from './pricing/tables.js';
+
+// Pricing calculator
+export {
+  estimateJobCost, recommendPrice, privacyPremium,
+  type RecommendPriceParams, type PricePoint, type PriceRecommendation,
+  type AdditionalApiCost,
+} from './pricing/calculator.js';
