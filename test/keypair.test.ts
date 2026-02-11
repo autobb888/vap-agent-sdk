@@ -1,0 +1,138 @@
+import { describe, it } from 'node:test';
+import assert from 'node:assert';
+
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+
+// These use require() internally for @bitgo/utxo-lib (CommonJS)
+const { generateKeypair, keypairFromWIF } = require('../src/identity/keypair.ts');
+const { signMessage, signChallenge } = require('../src/identity/signer.ts');
+const { buildPayment, selectUtxos, wifToAddress } = require('../src/tx/payment.ts');
+
+describe('Keypair Generation', () => {
+  it('generates a valid keypair', () => {
+    const kp = generateKeypair('verustest');
+    
+    assert.ok(kp.wif, 'WIF should exist');
+    assert.ok(kp.pubkey, 'Pubkey should exist');
+    assert.ok(kp.address, 'Address should exist');
+    
+    // WIF starts with U (compressed, verustest)
+    assert.ok(kp.wif.startsWith('U'), `WIF should start with U, got: ${kp.wif[0]}`);
+    
+    // Pubkey is 33 bytes compressed (66 hex chars)
+    assert.strictEqual(kp.pubkey.length, 66, 'Pubkey should be 66 hex chars');
+    assert.ok(kp.pubkey.startsWith('02') || kp.pubkey.startsWith('03'), 'Pubkey should start with 02 or 03');
+    
+    // R-address starts with R
+    assert.ok(kp.address.startsWith('R'), `Address should start with R, got: ${kp.address[0]}`);
+    
+    console.log(`  Generated: ${kp.address}`);
+  });
+
+  it('restores keypair from WIF', () => {
+    const kp1 = generateKeypair('verustest');
+    const kp2 = keypairFromWIF(kp1.wif, 'verustest');
+    
+    assert.strictEqual(kp2.address, kp1.address, 'Address should match');
+    assert.strictEqual(kp2.pubkey, kp1.pubkey, 'Pubkey should match');
+    assert.strictEqual(kp2.wif, kp1.wif, 'WIF should match');
+  });
+
+  it('generates unique keypairs', () => {
+    const kp1 = generateKeypair('verustest');
+    const kp2 = generateKeypair('verustest');
+    
+    assert.notStrictEqual(kp1.address, kp2.address, 'Addresses should be different');
+    assert.notStrictEqual(kp1.wif, kp2.wif, 'WIFs should be different');
+  });
+});
+
+describe('Message Signing', () => {
+  it('signs a message', () => {
+    const kp = generateKeypair('verustest');
+    const sig = signMessage(kp.wif, 'Hello VAP!', 'verustest');
+    
+    assert.ok(sig, 'Signature should exist');
+    assert.ok(sig.length > 0, 'Signature should not be empty');
+    
+    // Base64 signature should decode to 65 bytes
+    const sigBuf = Buffer.from(sig, 'base64');
+    assert.strictEqual(sigBuf.length, 65, 'Compact signature should be 65 bytes');
+    
+    console.log(`  Signature: ${sig.substring(0, 20)}...`);
+  });
+
+  it('signs a challenge (hex output)', () => {
+    const kp = generateKeypair('verustest');
+    const sig = signChallenge(kp.wif, 'vap-onboard:test-uuid', 'verustest');
+    
+    assert.ok(sig, 'Signature should exist');
+    // Hex signature = 130 chars (65 bytes)
+    assert.strictEqual(sig.length, 130, 'Hex signature should be 130 chars');
+    
+    console.log(`  Challenge sig: ${sig.substring(0, 20)}...`);
+  });
+});
+
+describe('UTXO Selection', () => {
+  it('selects largest UTXOs first', () => {
+    const utxos = [
+      { txid: 'a', vout: 0, satoshis: 100_000, height: 1 },
+      { txid: 'b', vout: 0, satoshis: 500_000, height: 2 },
+      { txid: 'c', vout: 0, satoshis: 200_000, height: 3 },
+    ];
+    
+    const { selected, total } = selectUtxos(utxos, 600_000);
+    
+    assert.strictEqual(selected[0].txid, 'b', 'Should pick largest first');
+    assert.strictEqual(total, 700_000, 'Total should be 500k + 200k');
+    assert.strictEqual(selected.length, 2, 'Should only need 2 UTXOs');
+  });
+
+  it('throws on insufficient funds', () => {
+    const utxos = [
+      { txid: 'a', vout: 0, satoshis: 100, height: 1 },
+    ];
+    
+    assert.throws(
+      () => selectUtxos(utxos, 1_000_000),
+      /Insufficient funds/,
+    );
+  });
+});
+
+describe('Transaction Builder', () => {
+  it('builds a payment transaction', () => {
+    const kp = generateKeypair('verustest');
+    
+    // Fake UTXOs (would fail on broadcast but tests TX construction)
+    const utxos = [
+      { txid: 'a'.repeat(64), vout: 0, satoshis: 1_000_000, height: 100 },
+    ];
+    
+    // Generate a second keypair as recipient
+    const recipient = generateKeypair('verustest');
+    
+    const rawhex = buildPayment({
+      wif: kp.wif,
+      toAddress: recipient.address,
+      amount: 500_000,
+      utxos,
+      fee: 10_000,
+      network: 'verustest',
+    });
+    
+    assert.ok(rawhex, 'Raw hex should exist');
+    assert.ok(rawhex.length > 0, 'Raw hex should not be empty');
+    assert.ok(/^[0-9a-f]+$/i.test(rawhex), 'Should be valid hex');
+    
+    console.log(`  TX hex: ${rawhex.substring(0, 40)}... (${rawhex.length / 2} bytes)`);
+  });
+
+  it('derives address from WIF', () => {
+    const kp = generateKeypair('verustest');
+    const addr = wifToAddress(kp.wif, 'verustest');
+    assert.strictEqual(addr, kp.address);
+  });
+});

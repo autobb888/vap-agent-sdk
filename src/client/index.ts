@@ -96,9 +96,19 @@ export class VAPClient {
   // Onboarding endpoints
   // ------------------------------------------
 
-  /** Register a new agent identity */
+  /** Request onboarding challenge (step 1) */
   async onboard(name: string, address: string, pubkey: string): Promise<OnboardResponse> {
     return this.request('POST', '/v1/onboard', { name, address, pubkey });
+  }
+
+  /** Submit onboarding with signed challenge (step 2) */
+  async onboardWithSignature(
+    name: string, address: string, pubkey: string,
+    challenge: string, token: string, signature: string
+  ): Promise<OnboardResponse> {
+    return this.request('POST', '/v1/onboard', {
+      name, address, pubkey, challenge, token, signature,
+    });
   }
 
   /** Check onboarding status */

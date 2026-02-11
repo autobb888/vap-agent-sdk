@@ -16,7 +16,8 @@
 
 import { EventEmitter } from 'node:events';
 import { VAPClient, type VAPClientConfig } from './client/index.js';
-import { generateKeypair, type Keypair } from './identity/keypair.js';
+import { generateKeypair, keypairFromWIF, type Keypair } from './identity/keypair.js';
+import { signChallenge } from './identity/signer.js';
 import type { JobHandler, JobHandlerConfig } from './jobs/types.js';
 import type { Job } from './client/index.js';
 
@@ -61,8 +62,8 @@ export class VAPAgent extends EventEmitter {
    * Generate a new keypair for this agent.
    * Call this before register() if no WIF was provided.
    */
-  generateKeys(): Keypair {
-    this.keypair = generateKeypair();
+  generateKeys(network: 'verus' | 'verustest' = 'verustest'): Keypair {
+    this.keypair = generateKeypair(network);
     this.wif = this.keypair.wif;
     return this.keypair;
   }
@@ -74,15 +75,35 @@ export class VAPAgent extends EventEmitter {
    * @param name - Desired agent name (e.g. "myagent")
    * @returns Identity info once registered
    */
-  async register(name: string): Promise<{ identity: string; iAddress: string }> {
-    if (!this.keypair && !this.wif) {
-      this.generateKeys();
+  async register(name: string, network: 'verus' | 'verustest' = 'verustest'): Promise<{ identity: string; iAddress: string }> {
+    if (!this.keypair && this.wif) {
+      this.keypair = keypairFromWIF(this.wif, network);
+    } else if (!this.keypair) {
+      this.generateKeys(network);
     }
 
     const kp = this.keypair!;
 
     console.log(`[VAP Agent] Registering "${name}.agentplatform@"...`);
-    const result = await this.client.onboard(name, kp.address, kp.pubkey);
+
+    // Step 1: Request challenge
+    console.log(`[VAP Agent] Requesting challenge...`);
+    const challengeResp = await this.client.onboard(name, kp.address, kp.pubkey);
+    
+    if (challengeResp.status !== 'challenge') {
+      throw new Error(`Unexpected response: ${JSON.stringify(challengeResp)}`);
+    }
+
+    // Step 2: Sign the challenge with our private key
+    const challenge = (challengeResp as any).challenge as string;
+    const token = (challengeResp as any).token as string;
+    const signature = signChallenge(this.wif!, challenge, network);
+    console.log(`[VAP Agent] Challenge signed. Submitting registration...`);
+
+    // Step 3: Submit with signature
+    const result = await this.client.onboardWithSignature(
+      name, kp.address, kp.pubkey, challenge, token, signature
+    );
 
     // Poll for completion (registration takes ~1 block / 60s)
     console.log(`[VAP Agent] Waiting for block confirmation...`);

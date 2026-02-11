@@ -1,22 +1,29 @@
 /**
  * Message signing for Verus agents.
- * Signs and verifies messages using WIF private key — no daemon required.
- * 
- * Uses the same algorithm as `verus signmessage`:
- * 1. Prepend Bitcoin Signed Message header
- * 2. Double SHA-256
- * 3. Sign with secp256k1 ECDSA
- * 4. Encode as Base64
+ * Uses @bitgo/utxo-lib (VerusCoin fork) for Verus-compatible signatures.
+ * Compatible with `verus signmessage` / `verus verifymessage`.
  */
 
-import { createHash, createSign, createVerify, createECDH } from 'node:crypto';
+const utxoLib = require('@bitgo/utxo-lib');
+const { createHash } = require('node:crypto');
 
 /**
  * Sign a message with a WIF private key.
  * Compatible with `verus verifymessage`.
+ * 
+ * Uses Bitcoin Signed Message format:
+ * 1. Prepend "Bitcoin Signed Message:\n" header
+ * 2. Double SHA-256
+ * 3. Sign with secp256k1 ECDSA (compact format with recovery byte)
+ * 4. Encode as Base64
  */
-export function signMessage(wif: string, message: string): string {
-  const { privateKey } = decodeWIF(wif);
+export function signMessage(
+  wif: string,
+  message: string,
+  networkName: 'verus' | 'verustest' = 'verustest'
+): string {
+  const network = utxoLib.networks[networkName];
+  const keyPair = utxoLib.ECPair.fromWIF(wif, network);
 
   // Bitcoin signed message format
   const prefix = '\x18Bitcoin Signed Message:\n';
@@ -25,60 +32,69 @@ export function signMessage(wif: string, message: string): string {
   const lenBuf = encodeVarInt(msgBuf.length);
 
   const fullMessage = Buffer.concat([prefixBuf, lenBuf, msgBuf]);
-  const msgHash = doubleHash(fullMessage);
 
-  // Sign with secp256k1
-  // Node.js crypto uses DER format, we need to convert to compact format
-  const sign = createSign('SHA256');
-  sign.update(msgHash);
-  sign.end();
-  const derSig = sign.sign({ key: privateKeyToPEM(privateKey), dsaEncoding: 'ieee-p1363' });
+  // Double SHA-256
+  const msgHash = createHash('sha256')
+    .update(createHash('sha256').update(fullMessage).digest())
+    .digest();
 
-  // For Verus compatibility, we need the recovery flag + compact signature
-  // This is a simplified version — full implementation needs recovery ID calculation
-  // TODO: Use @bitgo/utxo-lib for full Verus-compatible signatures
-  return derSig.toString('base64');
+  // Sign with compact recovery format
+  const signature = keyPair.sign(msgHash);
+
+  // Get recovery flag for compact signature
+  const pubkey = keyPair.getPublicKeyBuffer();
+  const compressed = pubkey.length === 33;
+  const recoveryFlag = getRecoveryFlag(keyPair, msgHash, signature, compressed);
+
+  // Compact signature: 1 byte recovery + 32 bytes r + 32 bytes s = 65 bytes
+  const compactSig = Buffer.alloc(65);
+  compactSig[0] = recoveryFlag;
+  signature.r.toBuffer(32).copy(compactSig, 1);
+  signature.s.toBuffer(32).copy(compactSig, 33);
+
+  return compactSig.toString('base64');
 }
 
 /**
- * Verify a message signature (requires RPC — use VAPClient.verifyMessage instead).
- * This is a placeholder — full verification needs the identity's public key from chain.
+ * Sign a challenge for onboarding verification.
+ * Returns hex-encoded signature for the /v1/onboard endpoint.
  */
-export function verifyMessage(_identity: string, _message: string, _signature: string): boolean {
-  // Signature verification requires knowing the identity's public key,
-  // which is stored on-chain. Use VAPClient or RPC for verification.
-  throw new Error(
-    'Local signature verification not implemented. ' +
-    'Use VAPClient to verify via the VAP API, or use Verus RPC verifymessage.'
-  );
+export function signChallenge(
+  wif: string,
+  challenge: string,
+  networkName: 'verus' | 'verustest' = 'verustest'
+): string {
+  const network = utxoLib.networks[networkName];
+  const keyPair = utxoLib.ECPair.fromWIF(wif, network);
+
+  // Hash the challenge with Bitcoin signed message format
+  const prefix = '\x18Bitcoin Signed Message:\n';
+  const msgBuf = Buffer.from(challenge, 'utf8');
+  const prefixBuf = Buffer.from(prefix, 'utf8');
+  const lenBuf = encodeVarInt(msgBuf.length);
+
+  const fullMessage = Buffer.concat([prefixBuf, lenBuf, msgBuf]);
+  const msgHash = createHash('sha256')
+    .update(createHash('sha256').update(fullMessage).digest())
+    .digest();
+
+  // Sign and return compact signature as hex
+  const signature = keyPair.sign(msgHash);
+  const pubkey = keyPair.getPublicKeyBuffer();
+  const compressed = pubkey.length === 33;
+  const recoveryFlag = getRecoveryFlag(keyPair, msgHash, signature, compressed);
+
+  const compactSig = Buffer.alloc(65);
+  compactSig[0] = recoveryFlag;
+  signature.r.toBuffer(32).copy(compactSig, 1);
+  signature.s.toBuffer(32).copy(compactSig, 33);
+
+  return compactSig.toString('hex');
 }
 
 // ------------------------------------------
 // Helpers
 // ------------------------------------------
-
-function decodeWIF(wif: string): { privateKey: Buffer; compressed: boolean } {
-  const decoded = base58Decode(wif);
-  // Remove version byte (first) and checksum (last 4)
-  const payload = decoded.subarray(1, -4);
-
-  // Verify checksum
-  const data = decoded.subarray(0, -4);
-  const checksum = doubleHash(data).subarray(0, 4);
-  if (!checksum.equals(decoded.subarray(-4))) {
-    throw new Error('Invalid WIF checksum');
-  }
-
-  if (payload.length === 33 && payload[32] === 0x01) {
-    return { privateKey: payload.subarray(0, 32), compressed: true };
-  }
-  return { privateKey: payload.subarray(0, 32), compressed: false };
-}
-
-function doubleHash(data: Buffer): Buffer {
-  const first = createHash('sha256').update(data).digest();
-  return createHash('sha256').update(first).digest();
-}
 
 function encodeVarInt(n: number): Buffer {
   if (n < 0xfd) return Buffer.from([n]);
@@ -94,50 +110,22 @@ function encodeVarInt(n: number): Buffer {
   return buf;
 }
 
-function privateKeyToPEM(privateKey: Buffer): string {
-  // Wrap raw private key in PKCS#8 DER for Node.js crypto
-  // secp256k1 OID: 1.3.132.0.10
-  const header = Buffer.from(
-    '30740201010420', 'hex'
-  );
-  const mid = Buffer.from(
-    'a00706052b8104000aa144034200', 'hex'
-  );
-
-  // Get public key from private key
-  const ecdh = createECDH('secp256k1');
-  ecdh.setPrivateKey(privateKey);
-  const pubkey = ecdh.getPublicKey();
-
-  const der = Buffer.concat([header, privateKey, mid, pubkey]);
-  const b64 = der.toString('base64');
-  return `-----BEGIN EC PRIVATE KEY-----\n${b64}\n-----END EC PRIVATE KEY-----`;
-}
-
-// Base58 decode
-const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-const ALPHA_MAP = new Map(ALPHABET.split('').map((c, i) => [c, BigInt(i)]));
-
-function base58Decode(str: string): Buffer {
-  let num = 0n;
-  for (const char of str) {
-    const val = ALPHA_MAP.get(char);
-    if (val === undefined) throw new Error(`Invalid Base58 character: ${char}`);
-    num = num * 58n + val;
+/**
+ * Calculate recovery flag for compact signature.
+ * recovery + 27 + (compressed ? 4 : 0)
+ */
+function getRecoveryFlag(keyPair: any, msgHash: Buffer, signature: any, compressed: boolean): number {
+  // Try recovery IDs 0-3 to find the right one
+  for (let i = 0; i < 4; i++) {
+    try {
+      const recovered = utxoLib.ECPair.recover(msgHash, signature, i);
+      if (recovered.getPublicKeyBuffer().equals(keyPair.getPublicKeyBuffer())) {
+        return i + 27 + (compressed ? 4 : 0);
+      }
+    } catch {
+      continue;
+    }
   }
-
-  let hex = num.toString(16);
-  if (hex.length % 2) hex = '0' + hex;
-
-  // Count leading '1's (zero bytes)
-  let zeros = 0;
-  for (const char of str) {
-    if (char === '1') zeros++;
-    else break;
-  }
-
-  return Buffer.concat([
-    Buffer.alloc(zeros),
-    Buffer.from(hex, 'hex'),
-  ]);
+  // Fallback — compressed key, recovery 0
+  return 31;
 }

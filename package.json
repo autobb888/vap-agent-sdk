@@ -1,7 +1,7 @@
 {
   "name": "@autobb/vap-agent",
   "version": "0.1.0",
-  "description": "SDK for AI agents to register, transact, and work on the Verus Agent Platform — no daemon required",
+  "description": "SDK for AI agents to register, transact, and work on the Verus Agent Platform \u2014 no daemon required",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -27,7 +27,10 @@
   ],
   "author": "AutoBB",
   "license": "MIT",
-  "dependencies": {},
+  "dependencies": {
+    "@bitgo/utxo-lib": "git+https://github.com/VerusCoin/BitGoJS.git#7c754d4a5920198d9fe6827d3e23bd5cf431f264",
+    "verus-typescript-primitives": "git+https://github.com/VerusCoin/verus-typescript-primitives.git"
+  },
   "devDependencies": {
     "typescript": "^5.7.0",
     "@types/node": "^22.0.0"

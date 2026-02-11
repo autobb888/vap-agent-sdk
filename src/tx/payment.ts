@@ -1,13 +1,13 @@
 /**
- * Transaction builder for simple VRSC payments.
- * Constructs and signs transactions locally — no daemon required.
- * 
- * NOTE: For MVP, this wraps the raw transaction construction.
- * Future versions will use @bitgo/utxo-lib (VerusCoin fork) for
- * full support including currency conversions and identity updates.
+ * Transaction builder for VRSC payments.
+ * Uses @bitgo/utxo-lib (VerusCoin fork) for full Verus-compatible transactions.
+ * Signs locally — no daemon required.
  */
 
 import type { Utxo } from '../client/index.js';
+
+// @bitgo/utxo-lib is CommonJS — require it
+const utxoLib = require('@bitgo/utxo-lib');
 
 export interface PaymentParams {
   /** WIF private key for signing */
@@ -20,21 +20,30 @@ export interface PaymentParams {
   utxos: Utxo[];
   /** Fee in satoshis (default: 10000 = 0.0001 VRSC) */
   fee?: number;
-  /** Change address (defaults to sender's address) */
+  /** Change address (defaults to sender's address derived from WIF) */
   changeAddress?: string;
+  /** Network: 'verus' | 'verustest' (default: 'verustest') */
+  network?: 'verus' | 'verustest';
+}
+
+// Dust threshold — outputs below this are rejected by the network
+const DUST_THRESHOLD = 546;
+
+/**
+ * Get the Verus network parameters.
+ */
+function getNetwork(name: 'verus' | 'verustest' = 'verustest') {
+  return utxoLib.networks[name];
 }
 
 /**
  * Select UTXOs using a simple largest-first algorithm.
- * Returns selected UTXOs and total value.
  */
 export function selectUtxos(
   utxos: Utxo[],
   targetAmount: number,
 ): { selected: Utxo[]; total: number } {
-  // Sort by value descending (largest first)
   const sorted = [...utxos].sort((a, b) => b.satoshis - a.satoshis);
-
   const selected: Utxo[] = [];
   let total = 0;
 
@@ -54,38 +63,65 @@ export function selectUtxos(
 }
 
 /**
- * Build a signed payment transaction.
- * 
- * TODO: Full implementation with @bitgo/utxo-lib.
- * This is a placeholder that documents the interface —
- * actual TX construction requires the VerusCoin fork of utxo-lib.
+ * Build and sign a VRSC payment transaction.
+ * Returns the raw transaction hex ready for broadcast.
  */
-export async function buildPayment(_params: PaymentParams): Promise<string> {
-  // Phase C implementation will use @bitgo/utxo-lib:
-  //
-  // const network = verusNetwork; // from @bitgo/utxo-lib networks
-  // const keyPair = ECPair.fromWIF(params.wif, network);
-  // const txb = new TransactionBuilder(network);
-  //
-  // const { selected, total } = selectUtxos(params.utxos, params.amount + fee);
-  //
-  // for (const utxo of selected) {
-  //   txb.addInput(utxo.txid, utxo.vout);
-  // }
-  //
-  // txb.addOutput(params.toAddress, params.amount);
-  //
-  // const change = total - params.amount - fee;
-  // if (change > 546) { // dust threshold
-  //   txb.addOutput(params.changeAddress || keyPair.getAddress(), change);
-  // }
-  //
-  // selected.forEach((_, i) => txb.sign(i, keyPair));
-  //
-  // return txb.build().toHex();
+export function buildPayment(params: PaymentParams): string {
+  const network = getNetwork(params.network);
+  const fee = params.fee ?? 10_000; // 0.0001 VRSC default
+  const keyPair = utxoLib.ECPair.fromWIF(params.wif, network);
+  const senderAddress = keyPair.getAddress();
 
-  throw new Error(
-    'Transaction building requires @bitgo/utxo-lib (VerusCoin fork). ' +
-    'This will be implemented in Phase C of the SDK development.'
-  );
+  // Select UTXOs
+  const needed = params.amount + fee;
+  const { selected, total } = selectUtxos(params.utxos, needed);
+
+  // Build transaction (Verus uses Sapling version 4)
+  const txb = new utxoLib.TransactionBuilder(network);
+  txb.setVersion(4);
+  txb.setVersionGroupId(0x892f2085);
+
+  // Add inputs
+  for (const utxo of selected) {
+    txb.addInput(utxo.txid, utxo.vout);
+  }
+
+  // Add payment output
+  txb.addOutput(params.toAddress, params.amount);
+
+  // Add change output (if above dust threshold)
+  const change = total - params.amount - fee;
+  if (change > DUST_THRESHOLD) {
+    const changeAddr = params.changeAddress || senderAddress;
+    txb.addOutput(changeAddr, change);
+  } else if (change < 0) {
+    throw new Error(`Insufficient funds after fee: need ${needed}, have ${total}`);
+  }
+  // If 0 < change <= DUST_THRESHOLD, it goes to the miner as extra fee
+
+  // Sign all inputs (Verus requires value for Overwinter+ signing)
+  for (let i = 0; i < selected.length; i++) {
+    txb.sign(i, keyPair, undefined, undefined, selected[i].satoshis);
+  }
+
+  // Build and return hex
+  return txb.build().toHex();
+}
+
+/**
+ * Get the R-address for a WIF private key.
+ */
+export function wifToAddress(wif: string, networkName: 'verus' | 'verustest' = 'verustest'): string {
+  const network = getNetwork(networkName);
+  const keyPair = utxoLib.ECPair.fromWIF(wif, network);
+  return keyPair.getAddress();
+}
+
+/**
+ * Get the compressed public key hex for a WIF private key.
+ */
+export function wifToPubkey(wif: string, networkName: 'verus' | 'verustest' = 'verustest'): string {
+  const network = getNetwork(networkName);
+  const keyPair = utxoLib.ECPair.fromWIF(wif, network);
+  return keyPair.getPublicKeyBuffer().toString('hex');
 }
