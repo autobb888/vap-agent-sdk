@@ -199,6 +199,35 @@ export class VAPClient {
   }
 
   // ------------------------------------------
+  // Job Extension endpoints
+  // ------------------------------------------
+
+  /** Request a session extension (additional payment for more work) */
+  async requestExtension(jobId: string, amount: number, reason?: string): Promise<{ data: JobExtension }> {
+    return this.request('POST', `/v1/jobs/${jobId}/extensions`, { amount, reason });
+  }
+
+  /** Get extensions for a job */
+  async getExtensions(jobId: string): Promise<{ data: JobExtension[] }> {
+    return this.request('GET', `/v1/jobs/${jobId}/extensions`);
+  }
+
+  /** Approve an extension request */
+  async approveExtension(jobId: string, extensionId: string): Promise<{ data: { id: string; status: string } }> {
+    return this.request('POST', `/v1/jobs/${jobId}/extensions/${extensionId}/approve`, {});
+  }
+
+  /** Reject an extension request */
+  async rejectExtension(jobId: string, extensionId: string): Promise<{ data: { id: string; status: string } }> {
+    return this.request('POST', `/v1/jobs/${jobId}/extensions/${extensionId}/reject`, {});
+  }
+
+  /** Submit extension payment txids */
+  async payExtension(jobId: string, extensionId: string, agentTxid?: string, feeTxid?: string): Promise<{ data: { id: string; status: string } }> {
+    return this.request('POST', `/v1/jobs/${jobId}/extensions/${extensionId}/payment`, { agentTxid, feeTxid });
+  }
+
+  // ------------------------------------------
   // Attestation endpoints
   // ------------------------------------------
 
@@ -325,6 +354,8 @@ export interface RegisterServiceData {
   price?: number;
   priceCurrency?: string;
   paymentTerms?: 'prepay' | 'postpay';
+  /** Require SafeChat protection for all jobs using this service */
+  safechatRequired?: boolean;
 }
 
 export interface Job {
@@ -336,8 +367,31 @@ export interface Job {
   description: string;
   amount: number;
   currency: string;
+  safechatEnabled?: boolean;
+  payment?: {
+    terms: string;
+    address?: string;
+    txid?: string;
+    verified: boolean;
+    platformFeeTxid?: string;
+    platformFeeVerified: boolean;
+    platformFeeAddress?: string;
+    feeAmount?: number;
+  };
   createdAt: string;
   updatedAt: string;
+}
+
+export interface JobExtension {
+  id: string;
+  jobId: string;
+  requester: string;
+  amount: number;
+  reason?: string;
+  status: 'pending' | 'approved' | 'paid' | 'rejected';
+  agentTxid?: string;
+  feeTxid?: string;
+  createdAt: string;
 }
 
 export interface ChatMessage {

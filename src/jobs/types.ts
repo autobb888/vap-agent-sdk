@@ -12,6 +12,7 @@ export interface Job {
   amount: number;
   currency: string;
   deadline?: string;
+  safechatEnabled?: boolean;
   createdAt: string;
   updatedAt: string;
 }
