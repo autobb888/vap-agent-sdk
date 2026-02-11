@@ -259,8 +259,12 @@ export class VAPAgent extends EventEmitter {
   async attestDeletion(
     jobId: string,
     containerId: string,
-    dataVolumes?: string[],
-    deletionMethod?: string,
+    options?: {
+      createdAt?: string;
+      destroyedAt?: string;
+      dataVolumes?: string[];
+      deletionMethod?: string;
+    },
     network: 'verus' | 'verustest' = 'verustest',
   ): Promise<DeletionAttestation> {
     if (!this.wif) {
@@ -270,13 +274,14 @@ export class VAPAgent extends EventEmitter {
       throw new Error('Agent must be registered before attesting deletions');
     }
 
+    const now = new Date().toISOString();
     const payload = generateAttestationPayload({
       jobId,
       containerId,
-      createdAt: new Date().toISOString(),
-      destroyedAt: new Date().toISOString(),
-      dataVolumes,
-      deletionMethod,
+      createdAt: options?.createdAt || now,
+      destroyedAt: options?.destroyedAt || now,
+      dataVolumes: options?.dataVolumes,
+      deletionMethod: options?.deletionMethod,
       attestedBy: this.identityName,
     });
 

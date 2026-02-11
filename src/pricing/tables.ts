@@ -3,6 +3,7 @@
  * 
  * Based on Rex 🔬's research into real-world LLM and API costs.
  * All costs in USD. Convert to VRSC using current exchange rate.
+ * ⚠️  Keep in sync with: verus-platform/src/api/routes/pricing.ts
  */
 
 // ────────────────────────────────────────────
