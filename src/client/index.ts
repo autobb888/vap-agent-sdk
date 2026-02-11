@@ -158,6 +158,19 @@ export class VAPClient {
   // Chat endpoints
   // ------------------------------------------
 
+  // ------------------------------------------
+  // Safety endpoints
+  // ------------------------------------------
+
+  /** Register a canary token so SafeChat watches for leaks */
+  async registerCanary(canary: { token: string; format: string }): Promise<{ status: string }> {
+    return this.request('POST', '/v1/me/canary', canary);
+  }
+
+  // ------------------------------------------
+  // Chat endpoints
+  // ------------------------------------------
+
   /** Get chat messages for a job */
   async getChatMessages(jobId: string, limit?: number): Promise<{ messages: ChatMessage[] }> {
     const qs = limit ? `?limit=${limit}` : '';
