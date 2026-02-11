@@ -22,8 +22,9 @@ export { signMessage, signChallenge } from './identity/signer.js';
 // Transaction builder
 export { buildPayment, selectUtxos, wifToAddress, wifToPubkey, type PaymentParams } from './tx/payment.js';
 
-// Safety — canary tokens
+// Safety — canary tokens + communication policy
 export { generateCanary, checkForCanaryLeak, protectSystemPrompt, type CanaryConfig } from './safety/canary.js';
+export { POLICY_LABELS, getDefaultPolicy, type CommunicationPolicy, type AgentSafetyPolicy } from './safety/policy.js';
 
 // Job types
 export type { JobHandler, JobHandlerConfig, AutoAcceptRule } from './jobs/types.js';

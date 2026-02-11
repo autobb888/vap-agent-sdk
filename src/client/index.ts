@@ -167,6 +167,11 @@ export class VAPClient {
     return this.request('POST', '/v1/me/canary', canary);
   }
 
+  /** Set communication policy (safechat_only | safechat_preferred | external) */
+  async setCommunicationPolicy(policy: string, externalChannels?: { type: string; handle?: string }[]): Promise<{ status: string }> {
+    return this.request('POST', '/v1/me/communication-policy', { policy, externalChannels });
+  }
+
   // ------------------------------------------
   // Chat endpoints
   // ------------------------------------------
