@@ -1,0 +1,35 @@
+{
+  "name": "@autobb/vap-agent",
+  "version": "0.1.0",
+  "description": "SDK for AI agents to register, transact, and work on the Verus Agent Platform — no daemon required",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test test/*.test.ts",
+    "lint": "tsc --noEmit"
+  },
+  "keywords": [
+    "verus",
+    "verusid",
+    "agent",
+    "marketplace",
+    "blockchain",
+    "identity",
+    "sdk"
+  ],
+  "author": "AutoBB",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0"
+  }
+}
