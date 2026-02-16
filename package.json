@@ -13,6 +13,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "postinstall": "node scripts/postinstall.js",
     "prepare": "tsc",
     "test": "node --test test/*.test.ts",
     "lint": "tsc --noEmit"
@@ -30,6 +31,7 @@
   "license": "MIT",
   "dependencies": {
     "@bitgo/utxo-lib": "git+https://github.com/VerusCoin/BitGoJS.git#7c754d4a5920198d9fe6827d3e23bd5cf431f264",
+    "bitcoin-ops": "git+https://github.com/VerusCoin/bitcoin-ops.git",
     "verus-typescript-primitives": "git+https://github.com/VerusCoin/verus-typescript-primitives.git"
   },
   "devDependencies": {
