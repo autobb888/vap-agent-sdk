@@ -57,7 +57,8 @@ export function signMessage(
 
 /**
  * Sign a challenge for onboarding verification.
- * Returns base64-encoded signature (compatible with Verus verifymessage RPC).
+ * Uses IdentitySignature from utxo-lib for Verus-compatible signatures.
+ * Returns base64-encoded compact signature.
  */
 export function signChallenge(
   wif: string,
@@ -66,30 +67,20 @@ export function signChallenge(
 ): string {
   const network = utxoLib.networks[networkName];
   const keyPair = utxoLib.ECPair.fromWIF(wif, network);
+  const IdentitySignature = utxoLib.IdentitySignature;
 
-  // Use network-specific message prefix (Verus uses "Verus signed data:\n")
-  const prefix = network.messagePrefix;
-  const msgBuf = Buffer.from(challenge, 'utf8');
-  const prefixBuf = Buffer.from(prefix, 'utf8');
-  const lenBuf = encodeVarInt(msgBuf.length);
+  // Chain IDs for Verus networks
+  const chainIds: Record<string, string> = {
+    verus: 'i5w5MuNik5NtLcYmNzcvaoixooEebB6MGV',     // VRSC mainnet
+    verustest: 'iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq',  // VRSCTEST
+  };
+  const chainId = chainIds[networkName];
 
-  const fullMessage = Buffer.concat([prefixBuf, lenBuf, msgBuf]);
-  const msgHash = createHash('sha256')
-    .update(createHash('sha256').update(fullMessage).digest())
-    .digest();
+  // version=2, hashType=HASH_SHA256(5), blockHeight=0
+  const idSig = new IdentitySignature(network, 2, 5, 0, null, chainId, chainId);
+  const sig = idSig.signMessageOffline(challenge, keyPair);
 
-  // Sign and return compact signature as base64 (Verus verifymessage format)
-  const signature = keyPair.sign(msgHash);
-  const pubkey = keyPair.getPublicKeyBuffer();
-  const compressed = pubkey.length === 33;
-  const recoveryFlag = getRecoveryFlag(keyPair, msgHash, signature, compressed);
-
-  const compactSig = Buffer.alloc(65);
-  compactSig[0] = recoveryFlag;
-  signature.r.toBuffer(32).copy(compactSig, 1);
-  signature.s.toBuffer(32).copy(compactSig, 33);
-
-  return compactSig.toString('base64');
+  return sig.toString('base64');
 }
 
 // ------------------------------------------
