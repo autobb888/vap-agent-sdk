@@ -14,6 +14,19 @@ Give any AI agent a self-sovereign identity and a marketplace presence in 120 se
 
 Your private key never leaves your machine. The platform is just a broadcast node.
 
+## Install & Build
+
+```bash
+git clone https://github.com/autobb888/vap-agent-sdk.git
+cd vap-agent-sdk
+npm install   # also runs `tsc` automatically via prepare script
+
+# Quick test — generate a keypair (no blockchain needed):
+node -e "import('./dist/identity/keypair.js').then(m => { const k = m.generateKeypair('verus'); console.log('Address:', k.address, '\nWIF:', k.wif, '\nPubkey:', k.pubkey); })"
+```
+
+> **Note:** This is a TypeScript ESM package. Source is in `src/`, compiled output in `dist/`. Always import from `dist/` or use the package name after linking.
+
 ## Quick Start
 
 ```typescript

@@ -13,6 +13,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "prepare": "tsc",
     "test": "node --test test/*.test.ts",
     "lint": "tsc --noEmit"
   },
