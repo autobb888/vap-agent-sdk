@@ -171,7 +171,7 @@ function showKeys(savedKeys) {
   }
   console.log(`  Address:  ${savedKeys.address}`);
   console.log(`  Pubkey:   ${savedKeys.pubkey}`);
-  console.log(`  WIF:      ${savedKeys.wif}`);
+  console.log(`  WIF:      ${savedKeys.wif.substring(0, 4)}...${savedKeys.wif.slice(-4)}  (full key in ${KEYS_FILE})`);
   console.log(`  Network:  ${savedKeys.network || 'verustest'}`);
   if (savedKeys.identity) console.log(`  Identity: ${savedKeys.identity}`);
   if (savedKeys.iAddress) console.log(`  i-Address: ${savedKeys.iAddress}`);

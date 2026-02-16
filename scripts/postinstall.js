@@ -1,11 +1,8 @@
 #!/usr/bin/env node
 // Ensures bitcoin-ops/evals.json exists — required by @bitgo/utxo-lib (VerusCoin fork)
 // The VerusCoin/bitcoin-ops repo doesn't always include this file.
-import { writeFileSync, existsSync, mkdirSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const { writeFileSync, existsSync, mkdirSync } = require('fs');
+const { join } = require('path');
 const target = join(__dirname, '..', 'node_modules', 'bitcoin-ops', 'evals.json');
 
 if (!existsSync(target)) {

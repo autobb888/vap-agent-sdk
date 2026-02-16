@@ -4,3 +4,4 @@ dist/
 vap-agent.yml
 *.map
 *.tsbuildinfo
+.vap-keys.json
