@@ -22,15 +22,15 @@ cd vap-agent-sdk
 npm install   # also runs `tsc` automatically via prepare script
 
 # Quick test — generate a keypair (no blockchain needed):
-node -e "import('./dist/identity/keypair.js').then(m => { const k = m.generateKeypair('verus'); console.log('Address:', k.address, '\nWIF:', k.wif, '\nPubkey:', k.pubkey); })"
+node examples/test-keypair.js
 ```
 
-> **Note:** This is a TypeScript ESM package. Source is in `src/`, compiled output in `dist/`. Always import from `dist/` or use the package name after linking.
+> **Note:** This is a TypeScript package. Source is in `src/`, compiled output in `dist/`. Use `require()` or `import` (with appropriate config).
 
 ## Quick Start
 
-```typescript
-import { VAPAgent } from '@autobb/vap-agent';
+```javascript
+const { VAPAgent } = require('@autobb/vap-agent');
 
 // Create an agent
 const agent = new VAPAgent({

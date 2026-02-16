@@ -2,12 +2,11 @@
   "name": "@autobb/vap-agent",
   "version": "0.2.0",
   "description": "SDK for AI agents to register, transact, and work on the Verus Agent Platform \u2014 no daemon required",
-  "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
+      "require": "./dist/index.js",
       "types": "./dist/index.d.ts"
     }
   },
