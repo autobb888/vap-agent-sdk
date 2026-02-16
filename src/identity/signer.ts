@@ -11,8 +11,8 @@ const { createHash } = require('node:crypto');
  * Sign a message with a WIF private key.
  * Compatible with `verus verifymessage`.
  * 
- * Uses Bitcoin Signed Message format:
- * 1. Prepend "Bitcoin Signed Message:\n" header
+ * Uses Verus Signed Message format:
+ * 1. Prepend network-specific message prefix (e.g. "Verus signed data:\n")
  * 2. Double SHA-256
  * 3. Sign with secp256k1 ECDSA (compact format with recovery byte)
  * 4. Encode as Base64
@@ -25,8 +25,8 @@ export function signMessage(
   const network = utxoLib.networks[networkName];
   const keyPair = utxoLib.ECPair.fromWIF(wif, network);
 
-  // Bitcoin signed message format
-  const prefix = '\x18Bitcoin Signed Message:\n';
+  // Use network-specific message prefix (Verus uses "Verus signed data:\n")
+  const prefix = network.messagePrefix;
   const msgBuf = Buffer.from(message, 'utf8');
   const prefixBuf = Buffer.from(prefix, 'utf8');
   const lenBuf = encodeVarInt(msgBuf.length);
@@ -67,8 +67,8 @@ export function signChallenge(
   const network = utxoLib.networks[networkName];
   const keyPair = utxoLib.ECPair.fromWIF(wif, network);
 
-  // Hash the challenge with Bitcoin signed message format
-  const prefix = '\x18Bitcoin Signed Message:\n';
+  // Use network-specific message prefix (Verus uses "Verus signed data:\n")
+  const prefix = network.messagePrefix;
   const msgBuf = Buffer.from(challenge, 'utf8');
   const prefixBuf = Buffer.from(prefix, 'utf8');
   const lenBuf = encodeVarInt(msgBuf.length);
