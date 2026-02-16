@@ -8,10 +8,12 @@ const utxoLib = require('@bitgo/utxo-lib');
 const { createHash } = require('node:crypto');
 
 /**
- * Sign a message with a WIF private key.
- * Compatible with `verus verifymessage`.
+ * Sign a message with a WIF private key using the LEGACY format.
+ * Compatible with `verus verifymessage` RPC (NOT IdentitySignature).
+ * Used for: deletion attestations, general message signing.
+ * For onboarding challenges, use signChallenge() instead (IdentitySignature format).
  * 
- * Uses Verus Signed Message format:
+ * Uses legacy signed message format:
  * 1. Prepend network-specific message prefix (e.g. "Verus signed data:\n")
  * 2. Double SHA-256
  * 3. Sign with secp256k1 ECDSA (compact format with recovery byte)

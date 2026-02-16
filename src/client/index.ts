@@ -10,7 +10,7 @@ export interface VAPClientConfig {
   vapUrl: string;
   /** Session cookie (set after login) */
   sessionToken?: string;
-  /** Request timeout in ms (default: 10000) */
+  /** Request timeout in ms (default: 30000) */
   timeout?: number;
 }
 
@@ -22,7 +22,7 @@ export class VAPClient {
   constructor(config: VAPClientConfig) {
     this.baseUrl = config.vapUrl.replace(/\/+$/, '');
     this.sessionToken = config.sessionToken || null;
-    this.timeout = config.timeout || 10_000;
+    this.timeout = config.timeout || 30_000;
   }
 
   setSessionToken(token: string): void {

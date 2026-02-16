@@ -1,6 +1,7 @@
 /**
  * Keypair generation for Verus agents.
  * Uses @bitgo/utxo-lib (VerusCoin fork) for proper Verus address derivation.
+ * Key generation uses crypto.randomBytes (Node.js CSPRNG) via ECPair.makeRandom().
  */
 
 const utxoLib = require('@bitgo/utxo-lib');
