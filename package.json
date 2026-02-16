@@ -26,6 +26,9 @@
     "identity",
     "sdk"
   ],
+  "bin": {
+    "vap": "./bin/vap.js"
+  },
   "author": "AutoBB",
   "license": "MIT",
   "dependencies": {

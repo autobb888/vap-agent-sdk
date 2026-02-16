@@ -21,7 +21,10 @@ git clone https://github.com/autobb888/vap-agent-sdk.git
 cd vap-agent-sdk
 npm install   # also runs `tsc` automatically via prepare script
 
-# Quick test — generate a keypair (no blockchain needed):
+# Run the interactive CLI:
+npx vap
+
+# Or test keypair generation directly:
 node examples/test-keypair.js
 ```
 
