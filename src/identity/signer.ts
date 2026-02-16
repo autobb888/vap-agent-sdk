@@ -57,7 +57,7 @@ export function signMessage(
 
 /**
  * Sign a challenge for onboarding verification.
- * Returns hex-encoded signature for the /v1/onboard endpoint.
+ * Returns base64-encoded signature (compatible with Verus verifymessage RPC).
  */
 export function signChallenge(
   wif: string,
@@ -78,7 +78,7 @@ export function signChallenge(
     .update(createHash('sha256').update(fullMessage).digest())
     .digest();
 
-  // Sign and return compact signature as hex
+  // Sign and return compact signature as base64 (Verus verifymessage format)
   const signature = keyPair.sign(msgHash);
   const pubkey = keyPair.getPublicKeyBuffer();
   const compressed = pubkey.length === 33;
@@ -89,7 +89,7 @@ export function signChallenge(
   signature.r.toBuffer(32).copy(compactSig, 1);
   signature.s.toBuffer(32).copy(compactSig, 33);
 
-  return compactSig.toString('hex');
+  return compactSig.toString('base64');
 }
 
 // ------------------------------------------
