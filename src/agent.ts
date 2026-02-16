@@ -109,16 +109,19 @@ export class VAPAgent extends EventEmitter {
       name, kp.address, kp.pubkey, challenge, token, signature
     );
 
-    // Poll for completion (registration takes ~1 block / 60s)
-    console.log(`[VAP Agent] Waiting for block confirmation...`);
+    // Poll for completion (blocks can take 1-15 minutes depending on network)
+    console.log(`[VAP Agent] Waiting for block confirmation (this can take several minutes)...`);
     let status = await this.client.onboardStatus(result.onboardId);
     let attempts = 0;
-    const maxAttempts = 30; // ~2.5 minutes
+    const maxAttempts = 120; // ~20 minutes at 10s intervals
 
     while (status.status !== 'registered' && status.status !== 'failed' && attempts < maxAttempts) {
-      await new Promise(r => setTimeout(r, 5_000));
+      await new Promise(r => setTimeout(r, 10_000));
       status = await this.client.onboardStatus(result.onboardId);
       attempts++;
+      if (attempts % 6 === 0) {
+        console.log(`[VAP Agent] Still waiting... (${Math.round(attempts * 10 / 60)}min elapsed, status: ${status.status})`);
+      }
     }
 
     if (status.status === 'failed') {
