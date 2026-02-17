@@ -35,11 +35,14 @@ async function login() {
   const loginData = await loginRes.json();
   if (!loginData.data?.success) throw new Error('Login failed: ' + JSON.stringify(loginData));
 
-  sessionCookie = loginRes.headers.get('set-cookie');
-  // Extract token value for WebSocket auth
-  const match = sessionCookie?.match(/verus_session=([^;]+)/);
+  const rawCookie = loginRes.headers.get('set-cookie') || '';
+  // Extract just the token value
+  const match = rawCookie.match(/verus_session=([^;]+)/);
   sessionToken = match ? match[1] : null;
+  // Build clean Cookie header for subsequent requests
+  sessionCookie = sessionToken ? `verus_session=${sessionToken}` : rawCookie;
   console.log('[AUTH] ✅ Logged in as', loginData.data.identityName);
+  console.log('[AUTH] Session token:', sessionToken ? sessionToken.slice(0, 8) + '...' : 'NOT FOUND');
 }
 
 async function authFetch(url, options = {}) {
