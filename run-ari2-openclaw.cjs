@@ -1,8 +1,8 @@
 /**
- * Ari2 Agent Runner — VAP SafeChat ↔ OpenClaw Bridge
+ * Ari2 Agent Runner — VAP SafeChat ↔ OpenClaw Bridge (HTTP mode)
  * 
  * Polls for VAP jobs, accepts them, connects to SafeChat,
- * forwards messages to Verus Wizard via OpenClaw gateway WebSocket.
+ * forwards messages to Verus Wizard via OpenClaw HTTP chat completions.
  * 
  * Usage: OPENCLAW_TOKEN=xxx node run-ari2-openclaw.cjs
  * 
@@ -12,7 +12,6 @@
  */
 var signChallenge = require('./dist/identity/signer.js').signChallenge;
 var sio = require('socket.io-client');
-var WS = require('ws');
 var fs = require('fs');
 
 var keys = JSON.parse(fs.readFileSync('.vap-keys.json', 'utf8'));
@@ -23,7 +22,8 @@ var I_ADDRESS = keys.iAddress || 'i42xpRB2gAvt8PWpQ5FLw4Q1eG3bUMVLbK';
 var POLL_INTERVAL = 30000;
 var OC_PORT = process.env.OPENCLAW_PORT || '18789';
 var OC_TOKEN = process.env.OPENCLAW_TOKEN || '';
-var OC_URL = 'ws://127.0.0.1:' + OC_PORT;
+var OC_URL = 'http://127.0.0.1:' + OC_PORT;
+var OC_MODEL = process.env.OPENCLAW_MODEL || 'nvidia/moonshotai/kimi-k2.5';
 
 if (!OC_TOKEN) {
   console.error('ERROR: Set OPENCLAW_TOKEN env var (from openclaw.json gateway.auth.token)');
@@ -36,208 +36,48 @@ var chatSocket = null;
 var acceptedJobs = new Set();
 var joinedRooms = new Set();
 
-// ── OpenClaw Gateway WebSocket Client ──────────────────────────────
-var ocWs = null;
-var ocConnected = false;
-var ocReqId = 0;
-var ocPending = {}; // id → { resolve, reject, timeout }
-var ocChatCallbacks = {}; // runId → { resolve, chunks[], timeout }
-
-function ocNextId() {
-  ocReqId++;
-  return 'r' + ocReqId;
-}
-
-function connectOpenClaw() {
-  return new Promise(function(resolve) {
-    console.log('[OC] Connecting to OpenClaw at ' + OC_URL + '...');
-    ocWs = new WS(OC_URL);
-
-    ocWs.on('open', function() {
-      // Send connect handshake
-      var id = ocNextId();
-      var connectMsg = {
-        type: 'req',
-        id: id,
-        method: 'connect',
-        params: {
-          minProtocol: 3,
-          maxProtocol: 3,
-          auth: { token: OC_TOKEN },
-          client: {
-            id: 'cli',
-            displayName: 'Ari2 VAP Bridge',
-            version: '1.0.0',
-            platform: 'node',
-            mode: 'cli'
-          }
-        }
-      };
-      ocWs.send(JSON.stringify(connectMsg));
-      
-      ocPending[id] = {
-        resolve: function(payload) {
-          ocConnected = true;
-          console.log('[OC] ✅ Connected to OpenClaw gateway');
-          console.log('[OC] Server info:', JSON.stringify(payload).slice(0, 500));
-          resolve();
-        },
-        reject: function(err) {
-          console.error('[OC] Connect failed:', err);
-          resolve(); // don't block startup
-        },
-        timeout: setTimeout(function() {
-          delete ocPending[id];
-          console.error('[OC] Connect timeout');
-          resolve();
-        }, 10000)
-      };
-    });
-
-    ocWs.on('message', function(raw) {
-      var msg;
-      try { msg = JSON.parse(String(raw)); } catch(e) { return; }
-
-      // Handle responses
-      if (msg.type === 'res' && msg.id && ocPending[msg.id]) {
-        var p = ocPending[msg.id];
-        clearTimeout(p.timeout);
-        delete ocPending[msg.id];
-        if (msg.ok) {
-          p.resolve(msg.payload);
-        } else {
-          p.reject(msg.error || msg.payload);
-        }
-        return;
-      }
-
-      // Handle chat events (streamed responses)
-      if (msg.type === 'event' && msg.event === 'chat') {
-        var payload = msg.payload || {};
-        var state = payload.state;
-        var runId = payload.runId;
-        
-        // Match by runId or sessionKey
-        var cbKey = null;
-        if (runId && ocChatCallbacks[runId]) {
-          cbKey = runId;
-        } else if (payload.sessionKey) {
-          // Fallback: match by session key if runId differs
-          var keys = Object.keys(ocChatCallbacks);
-          for (var k = 0; k < keys.length; k++) {
-            if (ocChatCallbacks[keys[k]].sessionKey === payload.sessionKey) {
-              cbKey = keys[k];
-              break;
-            }
-          }
-        }
-        
-        if (cbKey && ocChatCallbacks[cbKey]) {
-          var cb = ocChatCallbacks[cbKey];
-          
-          if (state === 'delta' && payload.message && payload.message.content) {
-            // message.content is array of {type, text} — extract full text
-            var contents = payload.message.content;
-            var fullText = '';
-            for (var ci = 0; ci < contents.length; ci++) {
-              if (contents[ci].type === 'text') fullText += contents[ci].text;
-            }
-            cb.lastText = fullText; // full accumulated text, not delta
-          }
-          
-          if (state === 'final') {
-            clearTimeout(cb.timeout);
-            delete ocChatCallbacks[cbKey];
-            cb.resolve(cb.lastText || '');
-          }
-          
-          if (state === 'error' || state === 'aborted') {
-            clearTimeout(cb.timeout);
-            delete ocChatCallbacks[cbKey];
-            cb.resolve(cb.lastText || 'Sorry, I encountered an error. Please try again.');
-          }
-        }
-        return;
-      }
-
-      // Ignore ticks, presence, etc.
-    });
-
-    ocWs.on('close', function() {
-      console.log('[OC] Disconnected. Reconnecting in 5s...');
-      ocConnected = false;
-      setTimeout(connectOpenClaw, 5000);
-    });
-
-    ocWs.on('error', function(err) {
-      console.error('[OC] WS error:', err.message);
-    });
-
-    // Timeout fallback
-    setTimeout(function() { resolve(); }, 10000);
-  });
-}
+// ── OpenClaw HTTP Chat Completions ─────────────────────────────────
 
 /**
- * Send a message to OpenClaw and wait for the full response.
- * Returns the assistant's reply text.
+ * Send a message to OpenClaw via HTTP /v1/chat/completions and get response.
  */
-function askOpenClaw(question, timeoutMs) {
-  timeoutMs = timeoutMs || 120000; // 2 min default
-  return new Promise(function(resolve, reject) {
-    if (!ocConnected || !ocWs) {
-      return reject(new Error('OpenClaw not connected'));
+async function askOpenClaw(question, timeoutMs) {
+  timeoutMs = timeoutMs || 120000;
+  
+  var controller = new AbortController();
+  var timer = setTimeout(function() { controller.abort(); }, timeoutMs);
+  
+  try {
+    var res = await fetch(OC_URL + '/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + OC_TOKEN,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: OC_MODEL,
+        messages: [{ role: 'user', content: question }]
+      }),
+      signal: controller.signal
+    });
+    
+    clearTimeout(timer);
+    
+    if (!res.ok) {
+      var errText = await res.text();
+      throw new Error('HTTP ' + res.status + ': ' + errText.slice(0, 200));
     }
-
-    var id = ocNextId();
-    var idempotencyKey = 'ari2-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-
-    var req = {
-      type: 'req',
-      id: id,
-      method: 'chat.send',
-      params: {
-        sessionKey: 'main',
-        text: question,
-        idempotencyKey: idempotencyKey
-      }
-    };
-
-    ocPending[id] = {
-      resolve: function(payload) {
-        // chat.send acks with { runId, status }
-        var runId = payload && payload.runId;
-        if (!runId) {
-          // If no runId, might be a direct response
-          if (payload && payload.text) return resolve(payload.text);
-          return reject(new Error('No runId in chat.send response'));
-        }
-
-        // Wait for streamed chat events
-        ocChatCallbacks[runId] = {
-          lastText: '',
-          sessionKey: 'main',
-          resolve: resolve,
-          timeout: setTimeout(function() {
-            var partial = ocChatCallbacks[runId] ? ocChatCallbacks[runId].lastText : '';
-            delete ocChatCallbacks[runId];
-            if (partial) resolve(partial);
-            else reject(new Error('OpenClaw response timeout'));
-          }, timeoutMs)
-        };
-      },
-      reject: function(err) {
-        console.log('[OC] chat.send rejected:', JSON.stringify(err));
-        reject(new Error(err && err.message ? err.message : JSON.stringify(err)));
-      },
-      timeout: setTimeout(function() {
-        delete ocPending[id];
-        reject(new Error('chat.send request timeout'));
-      }, 15000)
-    };
-
-    ocWs.send(JSON.stringify(req));
-  });
+    
+    var data = await res.json();
+    var choice = data.choices && data.choices[0];
+    if (choice && choice.message && choice.message.content) {
+      return choice.message.content;
+    }
+    throw new Error('No content in response');
+  } catch (e) {
+    clearTimeout(timer);
+    throw e;
+  }
 }
 
 // ── VAP Auth ───────────────────────────────────────────────────────
@@ -393,11 +233,14 @@ async function connectChat() {
 
       if (msg.jobId && msg.content) {
         try {
-          // Forward to OpenClaw Verus Wizard
           console.log('[OC] Asking Verus Wizard...');
           var response = await askOpenClaw(msg.content);
           
-          // Send response back to SafeChat
+          // Truncate if too long for chat (4000 char limit is common)
+          if (response.length > 3900) {
+            response = response.slice(0, 3900) + '\n\n[Response truncated]';
+          }
+          
           chatSocket.emit('message', { jobId: msg.jobId, content: response });
           console.log('[CHAT] 📤 Replied (' + response.length + ' chars) in job ' + msg.jobId.slice(0, 8));
         } catch (err) {
@@ -444,14 +287,36 @@ async function joinActiveJobChats() {
 
 // ── Main ───────────────────────────────────────────────────────────
 async function main() {
-  console.log('🤖 Ari 2.0 starting (OpenClaw bridge)...');
+  console.log('🤖 Ari 2.0 starting (HTTP bridge)...');
   console.log('   Identity: ' + IDENTITY);
   console.log('   i-address: ' + I_ADDRESS);
   console.log('   API: ' + API);
-  console.log('   OpenClaw: ' + OC_URL);
+  console.log('   OpenClaw: ' + OC_URL + '/v1/chat/completions');
+  console.log('   Model: ' + OC_MODEL);
   console.log('   Poll interval: ' + (POLL_INTERVAL / 1000) + 's\n');
 
-  await connectOpenClaw();
+  // Quick OpenClaw connectivity check
+  try {
+    var testRes = await fetch(OC_URL + '/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + OC_TOKEN,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: OC_MODEL,
+        messages: [{ role: 'user', content: 'ping' }]
+      })
+    });
+    if (testRes.ok) {
+      console.log('[OC] ✅ OpenClaw HTTP endpoint working');
+    } else {
+      console.error('[OC] ⚠️  OpenClaw returned ' + testRes.status + ' — check config');
+    }
+  } catch (e) {
+    console.error('[OC] ❌ Cannot reach OpenClaw at ' + OC_URL + ': ' + e.message);
+  }
+
   await login();
   await connectChat();
   await joinActiveJobChats();
