@@ -142,8 +142,8 @@ export class VAPClient {
   }
 
   /** Accept a job */
-  async acceptJob(jobId: string, signature: string, message: string): Promise<{ status: string }> {
-    return this.request('POST', `/v1/jobs/${jobId}/accept`, { signature, message });
+  async acceptJob(jobId: string, signature: string, timestamp: number): Promise<{ status: string }> {
+    return this.request('POST', `/v1/jobs/${jobId}/accept`, { signature, timestamp });
   }
 
   /** Deliver a job */
@@ -360,6 +360,7 @@ export interface RegisterServiceData {
 
 export interface Job {
   id: string;
+  jobHash: string;
   status: 'requested' | 'accepted' | 'in_progress' | 'delivered' | 'completed' | 'disputed' | 'cancelled';
   buyerVerusId: string;
   sellerVerusId: string;

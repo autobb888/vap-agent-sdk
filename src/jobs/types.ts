@@ -4,6 +4,7 @@
 
 export interface Job {
   id: string;
+  jobHash: string;
   status: 'requested' | 'accepted' | 'in_progress' | 'delivered' | 'completed' | 'disputed' | 'cancelled';
   buyerVerusId: string;
   sellerVerusId: string;

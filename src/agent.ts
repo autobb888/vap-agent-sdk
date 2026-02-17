@@ -38,6 +38,7 @@ export interface VAPAgentConfig {
   handler?: JobHandler;
   /** Job handler config */
   jobConfig?: JobHandlerConfig;
+  network?: 'verus' | 'verustest';
 }
 
 export class VAPAgent extends EventEmitter {
@@ -48,6 +49,7 @@ export class VAPAgent extends EventEmitter {
   private wif: string | null;
   private handler: JobHandler | null;
   private jobConfig: JobHandlerConfig;
+  private networkType: 'verus' | 'verustest' = 'verustest';
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private running = false;
 
@@ -60,6 +62,7 @@ export class VAPAgent extends EventEmitter {
     this.iAddress = config.iAddress || null;
     this.handler = config.handler || null;
     this.jobConfig = config.jobConfig || { pollInterval: 30_000 };
+    this.networkType = config.network || 'verustest';
   }
 
   /**
@@ -80,6 +83,7 @@ export class VAPAgent extends EventEmitter {
    * @returns Identity info once registered
    */
   async register(name: string, network: 'verus' | 'verustest' = 'verustest'): Promise<{ identity: string; iAddress: string }> {
+    this.networkType = network;
     if (!this.keypair && this.wif) {
       this.keypair = keypairFromWIF(this.wif, network);
     } else if (!this.keypair) {
@@ -197,8 +201,15 @@ export class VAPAgent extends EventEmitter {
           const decision = await this.handler.onJobRequested(job);
 
           if (decision === 'accept') {
-            // TODO: Sign acceptance message and call acceptJob
-            this.emit('job:accepted', job);
+            try {
+              const timestamp = Math.floor(Date.now() / 1000);
+              const acceptMessage = `VAP-ACCEPT|Job:${job.jobHash}|Buyer:${job.buyerVerusId}|Amt:${job.amount} ${job.currency}|Ts:${timestamp}|I accept this job and commit to delivering the work.`;
+              const signature = signChallenge(this.wif!, acceptMessage, this.iAddress!, this.networkType);
+              await this.client.acceptJob(job.id, signature, timestamp);
+              this.emit('job:accepted', job);
+            } catch (err) {
+              this.emit('error', new Error(`Failed to accept job ${job.id}: ${err}`));
+            }
           } else if (decision === 'reject') {
             this.emit('job:rejected', job);
           }
