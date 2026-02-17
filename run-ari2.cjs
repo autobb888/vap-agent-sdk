@@ -143,6 +143,9 @@ async function connectChat() {
     chatSocket = io(API, {
       path: '/ws',
       auth: { token: chatToken },
+      extraHeaders: {
+        'Cookie': `verus_session=${sessionToken}`,
+      },
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: 2000,

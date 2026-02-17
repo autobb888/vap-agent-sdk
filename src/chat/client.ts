@@ -64,6 +64,9 @@ export class ChatClient {
       this.socket = io(this.config.vapUrl, {
         path: '/ws',
         auth: { token: chatToken },
+        extraHeaders: {
+          'Cookie': `verus_session=${this.config.sessionToken}`,
+        },
         transports: ['websocket', 'polling'],
         reconnection: true,
         reconnectionDelay: 2000,
