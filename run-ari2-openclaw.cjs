@@ -65,11 +65,11 @@ function connectOpenClaw() {
           maxProtocol: 3,
           auth: { token: OC_TOKEN },
           client: {
-            id: 'gateway-client',
+            id: 'cli',
             displayName: 'Ari2 VAP Bridge',
             version: '1.0.0',
             platform: 'node',
-            mode: 'backend'
+            mode: 'cli'
           }
         }
       };
@@ -79,6 +79,7 @@ function connectOpenClaw() {
         resolve: function(payload) {
           ocConnected = true;
           console.log('[OC] ✅ Connected to OpenClaw gateway');
+          console.log('[OC] Server info:', JSON.stringify(payload).slice(0, 500));
           resolve();
         },
         reject: function(err) {
@@ -225,7 +226,10 @@ function askOpenClaw(question, timeoutMs) {
           }, timeoutMs)
         };
       },
-      reject: reject,
+      reject: function(err) {
+        console.log('[OC] chat.send rejected:', JSON.stringify(err));
+        reject(new Error(err && err.message ? err.message : JSON.stringify(err)));
+      },
       timeout: setTimeout(function() {
         delete ocPending[id];
         reject(new Error('chat.send request timeout'));
