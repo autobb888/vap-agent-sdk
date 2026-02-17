@@ -18,6 +18,7 @@ import { EventEmitter } from 'node:events';
 import { VAPClient, type VAPClientConfig } from './client/index.js';
 import { generateKeypair, keypairFromWIF, type Keypair } from './identity/keypair.js';
 import { signChallenge } from './identity/signer.js';
+import { ChatClient, type IncomingMessage, type MessageHandler } from './chat/client.js';
 import type { JobHandler, JobHandlerConfig } from './jobs/types.js';
 import type { Job } from './client/index.js';
 import type { PrivacyTier } from './privacy/tiers.js';
@@ -52,6 +53,8 @@ export class VAPAgent extends EventEmitter {
   private networkType: 'verus' | 'verustest' = 'verustest';
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private running = false;
+  private chatClient: ChatClient | null = null;
+  private chatHandler: ((jobId: string, message: IncomingMessage) => void | Promise<void>) | null = null;
 
   constructor(config: VAPAgentConfig) {
     super();
@@ -183,6 +186,77 @@ export class VAPAgent extends EventEmitter {
     this.running = false;
     this.emit('stopped');
     console.log('[VAP Agent] Stopped.');
+    this.chatClient?.disconnect();
+    this.chatClient = null;
+  }
+
+  /**
+   * Connect to SafeChat WebSocket for real-time messaging.
+   * Call after login (needs session token on client).
+   */
+  async connectChat(): Promise<void> {
+    if (!this.client.getSessionToken()) {
+      throw new Error('Must be logged in before connecting to chat');
+    }
+
+    this.chatClient = new ChatClient({
+      vapUrl: (this.client as any).baseUrl,
+      sessionToken: this.client.getSessionToken()!,
+    });
+
+    this.chatClient.onMessage((msg) => {
+      // Don't handle our own messages
+      const myId = this.iAddress || this.identityName;
+      if (msg.senderVerusId === myId || msg.senderVerusId === this.identityName) return;
+
+      this.emit('chat:message', msg);
+      if (this.chatHandler) {
+        this.chatHandler(msg.jobId, msg);
+      }
+    });
+
+    await this.chatClient.connect();
+    console.log('[CHAT] ✅ Connected to SafeChat');
+
+    // Join rooms for any active jobs we're the seller on
+    try {
+      const { jobs } = await this.client.getMyJobs({ status: 'accepted', role: 'seller' });
+      const inProgress = await this.client.getMyJobs({ status: 'in_progress', role: 'seller' });
+      const allJobs = [...(jobs || []), ...(inProgress.jobs || [])];
+      for (const job of allJobs) {
+        this.chatClient.joinJob(job.id);
+      }
+      if (allJobs.length > 0) {
+        console.log(`[CHAT] Joined ${allJobs.length} active job room(s)`);
+      }
+    } catch (e) {
+      console.error('[CHAT] Failed to join existing job rooms:', e);
+    }
+  }
+
+  /**
+   * Set a handler for incoming chat messages.
+   * Handler receives (jobId, message) and can call sendChatMessage() to reply.
+   */
+  onChatMessage(handler: (jobId: string, message: IncomingMessage) => void | Promise<void>): void {
+    this.chatHandler = handler;
+  }
+
+  /**
+   * Send a chat message in a job room.
+   */
+  sendChatMessage(jobId: string, content: string): void {
+    if (!this.chatClient?.isConnected) {
+      throw new Error('Chat not connected');
+    }
+    this.chatClient.sendMessage(jobId, content);
+  }
+
+  /**
+   * Join a specific job's chat room.
+   */
+  joinJobChat(jobId: string): void {
+    this.chatClient?.joinJob(jobId);
   }
 
   /**
@@ -207,6 +281,10 @@ export class VAPAgent extends EventEmitter {
               const signature = signChallenge(this.wif!, acceptMessage, this.iAddress!, this.networkType);
               await this.client.acceptJob(job.id, signature, timestamp);
               this.emit('job:accepted', job);
+              // Auto-join chat room if chat is connected
+              if (this.chatClient?.isConnected) {
+                this.chatClient.joinJob(job.id);
+              }
             } catch (err) {
               this.emit('error', new Error(`Failed to accept job ${job.id}: ${err}`));
             }

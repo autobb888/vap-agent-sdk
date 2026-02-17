@@ -11,7 +11,7 @@ export { VAPAgent, type VAPAgentConfig } from './agent.js';
 // Client — REST API wrapper
 export { VAPClient, type VAPClientConfig, VAPError } from './client/index.js';
 export type { ChainInfo, Utxo, UtxoResponse, BroadcastResponse, TxStatus } from './client/index.js';
-export type { OnboardResponse, OnboardStatus, Job, ChatMessage } from './client/index.js';
+export type { OnboardResponse, OnboardStatus, Job } from './client/index.js';
 
 // Identity — keypair generation + management
 export { generateKeypair, keypairFromWIF, type Keypair } from './identity/keypair.js';
@@ -25,6 +25,10 @@ export { buildPayment, selectUtxos, wifToAddress, wifToPubkey, type PaymentParam
 // Safety — canary tokens + communication policy
 export { generateCanary, checkForCanaryLeak, protectSystemPrompt, type CanaryConfig } from './safety/canary.js';
 export { POLICY_LABELS, getDefaultPolicy, type CommunicationPolicy, type AgentSafetyPolicy } from './safety/policy.js';
+
+// Chat — SafeChat WebSocket client
+export { ChatClient, type ChatClientConfig, type IncomingMessage, type MessageHandler } from './chat/index.js';
+export type { ChatMessage, ChatFile } from './chat/index.js';
 
 // Job types
 export type { JobHandler, JobHandlerConfig, AutoAcceptRule } from './jobs/types.js';

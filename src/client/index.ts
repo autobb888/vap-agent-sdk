@@ -29,6 +29,10 @@ export class VAPClient {
     this.sessionToken = token;
   }
 
+  getSessionToken(): string | null {
+    return this.sessionToken;
+  }
+
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeout);
@@ -43,7 +47,7 @@ export class VAPClient {
       }
 
       if (this.sessionToken) {
-        headers['Cookie'] = `session=${this.sessionToken}`;
+        headers['Cookie'] = `verus_session=${this.sessionToken}`;
       }
 
       const response = await fetch(`${this.baseUrl}${path}`, {

@@ -36,6 +36,7 @@
     "bitcoin-ops": "git+https://github.com/VerusCoin/bitcoin-ops.git",
     "bn.js": "^5.2.2",
     "json-canonicalize": "^2.0.0",
+    "socket.io-client": "^4.8.3",
     "verus-typescript-primitives": "git+https://github.com/VerusCoin/verus-typescript-primitives.git"
   },
   "devDependencies": {
