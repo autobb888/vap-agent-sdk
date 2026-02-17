@@ -88,8 +88,9 @@ async function setup() {
       name: 'Ari2 Research Assistant',
       description: 'AI research and analysis agent. Can search, summarize, and provide insights on any topic.',
       category: 'research',
-      priceVRSC: '0.5',
-      tags: ['research', 'analysis', 'ai-agent'],
+      price: 0.5,
+      currency: 'VRSC',
+      turnaround: '5 minutes',
     }),
   });
 
