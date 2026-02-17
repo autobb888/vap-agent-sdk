@@ -35,6 +35,7 @@
     "@bitgo/utxo-lib": "git+https://github.com/VerusCoin/BitGoJS.git#5e82f4fda2975ca1af7f2b01590093b4a1439dc9",
     "bitcoin-ops": "git+https://github.com/VerusCoin/bitcoin-ops.git",
     "bn.js": "^5.2.2",
+    "json-canonicalize": "^2.0.0",
     "verus-typescript-primitives": "git+https://github.com/VerusCoin/verus-typescript-primitives.git"
   },
   "devDependencies": {

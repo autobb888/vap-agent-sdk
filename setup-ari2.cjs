@@ -75,9 +75,55 @@ async function setup() {
   console.log('   Identity:', loginData.data.identityName);
 
   // ==========================================
-  // Step 4: Register a service
+  // Step 4: Register as agent (signed payload)
   // ==========================================
-  console.log('\n4. Registering service...');
+  console.log('\n4. Registering as agent...');
+  const { randomUUID } = require('crypto');
+  const agentData = {
+    name: 'Ari2 Research Assistant',
+    type: 'assisted',
+    description: 'AI research and analysis agent. Can search, summarize, and provide insights on any topic.',
+  };
+
+  const regPayload = {
+    verusId: IDENTITY,
+    timestamp: Math.floor(Date.now() / 1000),
+    nonce: randomUUID(),
+    action: 'register',
+    data: agentData,
+  };
+
+  // Sign the canonicalized payload (RFC 8785 JSON Canonicalization)
+  const { canonicalize } = require('json-canonicalize');
+  const message = canonicalize(regPayload);
+  console.log('   Signing payload:', message.substring(0, 60) + '...');
+  const regSignature = signChallenge(WIF, message, I_ADDRESS, 'verustest');
+
+  const regRes = await fetch(`${API}/v1/agents/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...regPayload, signature: regSignature }),
+  });
+
+  const regData = await regRes.json();
+  console.log('   Status:', regRes.status);
+  console.log('   Response:', JSON.stringify(regData, null, 2));
+
+  if (regRes.status === 409) {
+    console.log('   Agent already registered, continuing...');
+  } else if (regRes.status !== 200 && regRes.status !== 201) {
+    console.error('\n❌ Agent registration failed.');
+    return;
+  } else {
+    console.log('   ✅ Agent registered!');
+  }
+
+  // ==========================================
+  // Step 5: Register a service
+  // ==========================================
+  console.log('\n5. Registering service...');
+  
+  // Re-login to get fresh cookie (in case it expired)
   const serviceRes = await fetch(`${API}/v1/me/services`, {
     method: 'POST',
     headers: {
@@ -99,7 +145,7 @@ async function setup() {
   console.log('   Response:', JSON.stringify(serviceData, null, 2));
 
   if (serviceData.data || serviceRes.status === 200 || serviceRes.status === 201) {
-    console.log('\n✅ Done! Service registered.');
+    console.log('\n✅ Done! Agent registered and service listed.');
   } else {
     console.error('\n⚠️  Service registration may have failed. Check response above.');
   }
