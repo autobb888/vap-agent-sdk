@@ -58,13 +58,19 @@ export function signMessage(
 }
 
 /**
- * Sign a challenge for onboarding verification.
+ * Sign a challenge for onboarding/auth verification.
  * Uses IdentitySignature from utxo-lib for Verus-compatible signatures.
- * Returns base64-encoded compact signature.
+ * Returns base64-encoded serialized CIdentitySignature (compatible with verusd verifymessage).
+ * 
+ * @param wif - Private key in WIF format
+ * @param challenge - Message to sign
+ * @param identityAddress - The i-address of the VerusID signing (e.g. "iHax5...")
+ * @param networkName - Network name ('verus' or 'verustest')
  */
 export function signChallenge(
   wif: string,
   challenge: string,
+  identityAddress: string,
   networkName: 'verus' | 'verustest' = 'verustest'
 ): string {
   const network = utxoLib.networks[networkName];
@@ -79,10 +85,14 @@ export function signChallenge(
   const chainId = chainIds[networkName];
 
   // version=2, hashType=HASH_SHA256(5), blockHeight=0
-  const idSig = new IdentitySignature(network, 2, 5, 0, null, chainId, chainId);
-  const sig = idSig.signMessageOffline(challenge, keyPair);
+  // chainId = systemID, identityAddress = the VerusID that is signing
+  const idSig = new IdentitySignature(network, 2, 5, 0, null, chainId, identityAddress);
+  idSig.signMessageOffline(challenge, keyPair);
 
-  return sig.toString('base64');
+  // Serialize the full CIdentitySignature (version + hashType + blockHeight + sigs)
+  // This is what verusd verifymessage expects, not just the raw compact sig
+  const serialized = idSig.toBuffer();
+  return serialized.toString('base64');
 }
 
 // ------------------------------------------

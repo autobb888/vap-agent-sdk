@@ -101,7 +101,8 @@ export class VAPAgent extends EventEmitter {
     // Step 2: Sign the challenge with our private key
     const challenge = (challengeResp as any).challenge as string;
     const token = (challengeResp as any).token as string;
-    const signature = signChallenge(this.wif!, challenge, network);
+    // Onboarding verifies against R-address (not VerusID), so pass address as identity
+    const signature = signChallenge(this.wif!, challenge, kp.address, network);
     console.log(`[VAP Agent] Challenge signed. Submitting registration...`);
 
     // Step 3: Submit with signature

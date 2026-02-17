@@ -63,13 +63,16 @@ describe('Message Signing', () => {
     console.log(`  Signature: ${sig.substring(0, 20)}...`);
   });
 
-  it('signs a challenge (hex output)', () => {
+  it('signs a challenge (CIdentitySignature format)', () => {
     const kp = generateKeypair('verustest');
-    const sig = signChallenge(kp.wif, 'vap-onboard:test-uuid', 'verustest');
+    const sig = signChallenge(kp.wif, 'vap-onboard:test-uuid', kp.address, 'verustest');
     
     assert.ok(sig, 'Signature should exist');
-    // Hex signature = 130 chars (65 bytes)
-    assert.strictEqual(sig.length, 130, 'Hex signature should be 130 chars');
+    // Serialized CIdentitySignature: version(1) + hashType(1) + blockHeight(4) + numSigs(1) + sigLen(1) + sig(65) = 73 bytes
+    const sigBuf = Buffer.from(sig, 'base64');
+    assert.strictEqual(sigBuf.length, 73, 'Serialized CIdentitySignature should be 73 bytes');
+    assert.strictEqual(sigBuf[0], 2, 'Version should be 2');
+    assert.strictEqual(sigBuf[1], 5, 'HashType should be SHA256 (5)');
     
     console.log(`  Challenge sig: ${sig.substring(0, 20)}...`);
   });
