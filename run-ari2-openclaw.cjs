@@ -42,7 +42,7 @@ var joinedRooms = new Set();
  * Send a message to OpenClaw via HTTP /v1/chat/completions and get response.
  */
 async function askOpenClaw(question, timeoutMs) {
-  timeoutMs = timeoutMs || 120000;
+  timeoutMs = timeoutMs || 300000; // 5 min — Kimi free tier can be slow
   
   var controller = new AbortController();
   var timer = setTimeout(function() { controller.abort(); }, timeoutMs);
