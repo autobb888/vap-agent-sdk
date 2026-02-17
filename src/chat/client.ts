@@ -78,12 +78,12 @@ export class ChatClient {
         resolve();
       });
 
-      this.socket.on('disconnect', (reason) => {
+      this.socket.on('disconnect', (reason: string) => {
         this.connected = false;
         console.log(`[CHAT] Disconnected: ${reason}`);
       });
 
-      this.socket.on('connect_error', (err) => {
+      this.socket.on('connect_error', (err: Error) => {
         console.error(`[CHAT] Connection error: ${err.message}`);
         if (!this.connected) {
           reject(err);
