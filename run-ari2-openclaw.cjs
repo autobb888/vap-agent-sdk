@@ -65,11 +65,11 @@ function connectOpenClaw() {
           maxProtocol: 3,
           auth: { token: OC_TOKEN },
           client: {
-            id: 'vap-ari2',
+            id: 'gateway-client',
             displayName: 'Ari2 VAP Bridge',
             version: '1.0.0',
             platform: 'node',
-            mode: 'cli'
+            mode: 'backend'
           }
         }
       };
