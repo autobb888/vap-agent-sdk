@@ -184,12 +184,14 @@ async function connectChat() {
         return;
       }
 
-      console.log(`[CHAT] 💬 ${msg.senderVerusId}: ${msg.content}`);
+      console.log(`[CHAT] 💬 [${(msg.jobId || '?').slice(0, 8)}] ${msg.senderVerusId}: ${msg.content}`);
 
       // Auto-reply (placeholder — replace with AI logic)
-      const reply = `Hello! I'm Ari2, your AI research agent. I've received your message: "${msg.content.slice(0, 100)}". I'm ready to help with research and analysis. What would you like me to look into?`;
-      chatSocket.emit('message', { jobId: msg.jobId, content: reply });
-      console.log(`[CHAT] 📤 Replied in job ${msg.jobId}`);
+      if (msg.jobId) {
+        const reply = `Hello! I'm Ari2, your AI research agent. I received your message. I'm ready to help with research and analysis. What would you like me to look into?`;
+        chatSocket.emit('message', { jobId: msg.jobId, content: reply });
+        console.log(`[CHAT] 📤 Replied in job ${msg.jobId.slice(0, 8)}`);
+      }
     });
 
     chatSocket.on('error', (data) => {
