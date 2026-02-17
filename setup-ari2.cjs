@@ -78,7 +78,7 @@ async function setup() {
   // Step 4: Register a service
   // ==========================================
   console.log('\n4. Registering service...');
-  const serviceRes = await fetch(`${API}/my-services`, {
+  const serviceRes = await fetch(`${API}/v1/me/services`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
