@@ -141,6 +141,7 @@ async function connectChat() {
 
   return new Promise((resolve) => {
     chatSocket = io(API, {
+      path: '/ws',
       auth: { token: chatToken },
       transports: ['websocket', 'polling'],
       reconnection: true,

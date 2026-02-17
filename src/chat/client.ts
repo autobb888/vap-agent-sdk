@@ -62,6 +62,7 @@ export class ChatClient {
     // Step 2: Connect Socket.IO with the token
     return new Promise((resolve, reject) => {
       this.socket = io(this.config.vapUrl, {
+        path: '/ws',
         auth: { token: chatToken },
         transports: ['websocket', 'polling'],
         reconnection: true,
