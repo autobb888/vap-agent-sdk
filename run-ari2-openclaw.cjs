@@ -64,6 +64,7 @@ function connectOpenClaw() {
           minProtocol: 3,
           maxProtocol: 3,
           auth: { token: OC_TOKEN },
+          scopes: ['operator.write'],
           client: {
             id: 'gateway-client',
             displayName: 'Ari2 VAP Bridge',
