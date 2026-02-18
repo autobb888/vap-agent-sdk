@@ -1,54 +1,21 @@
 #!/bin/bash
 # Setup script for vap-agent-sdk on vap-av1
-# Handles the monorepo git dependency issue
+# Uses pnpm with overrides to fix broken dependencies
 
 set -e
 
 echo "Setting up VAP Agent SDK..."
 
-# Clean up everything
+# Clean up
 rm -rf node_modules pnpm-lock.yaml
 
-# Create a local directory for BitGoJS
-echo "Cloning Verus BitGoJS fork..."
-mkdir -p node_modules/@bitgo
+# Create .npmrc to ignore scripts
+ cat > .npmrc << 'EOF'
+ignore-scripts=true
+EOF
 
-# Create a temporary directory
-TMPDIR=$(mktemp -d)
-cd "$TMPDIR"
-
-# Clone the full repo
-git clone --depth 1 https://github.com/VerusCoin/BitGoJS.git
-
-# Checkout specific commit
-cd BitGoJS
-git fetch --depth 1 origin ceca7ff324da88230e138709a8288f6b5dbc7d56
-git checkout ceca7ff324da88230e138709a8288f6b5dbc7d56
-
-# Build the utxo-lib module
-cd modules/utxo-lib
-echo "Installing utxo-lib dependencies..."
-npm install --ignore-scripts
-
-echo "Building utxo-lib..."
-npx tsc --build . || true
-
-# Copy the built module to the right place
-cd ~/vap-agent-sdk
-rm -rf node_modules/@bitgo/utxo-lib
-mkdir -p node_modules/@bitgo/utxo-lib
-cp -r "$TMPDIR/BitGoJS/modules/utxo-lib/"* node_modules/@bitgo/utxo-lib/
-
-# Cleanup
-cd ~
-rm -rf "$TMPDIR"
-
-# Go back to SDK directory
-cd ~/vap-agent-sdk
-
-# Now install SDK dependencies WITHOUT @bitgo/utxo-lib
-echo "Installing SDK dependencies..."
-cat > package.json.tmp << 'EOF'
+# Create package.json with override for the broken dependency
+cat > package.json.override << 'EOF'
 {
   "name": "@autobb/vap-agent",
   "version": "0.2.0",
@@ -83,25 +50,34 @@ cat > package.json.tmp << 'EOF'
   "author": "AutoBB",
   "license": "MIT",
   "dependencies": {
+    "@bitgo/utxo-lib": "git+https://github.com/VerusCoin/BitGoJS.git#ceca7ff324da88230e138709a8288f6b5dbc7d56",
+    "bitcoin-ops": "git+https://github.com/VerusCoin/bitcoin-ops.git",
     "bn.js": "^5.2.2",
     "json-canonicalize": "^2.0.0",
-    "socket.io-client": "^4.8.3"
+    "socket.io-client": "^4.8.3",
+    "verus-typescript-primitives": "git+https://github.com/VerusCoin/verus-typescript-primitives.git"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "typescript": "^5.7.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "supertest-as-promised": "4.0.2"
+    }
   }
 }
 EOF
 
-# Temporarily use modified package.json
+# Backup original and use override
 mv package.json package.json.orig
-mv package.json.tmp package.json
+mv package.json.override package.json
 
-# Install deps with pnpm
+# Install with pnpm (should use override)
+echo "Installing dependencies..."
 npx pnpm install
 
-# Restore original package.json
+# Restore original
 mv package.json.orig package.json
 
 # Build SDK
