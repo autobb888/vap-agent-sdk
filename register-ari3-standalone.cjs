@@ -38,7 +38,16 @@ async function main() {
   // Check WIF version
   const { default: bs58check } = require('bs58check');
   const decoded = bs58check.decode(keys.wif);
-  console.log('  WIF version byte:', '0x' + decoded[0].toString(16), decoded[0] === 0xef ? '(testnet)' : decoded[0] === 0x80 ? '(mainnet)' : '(unknown)');
+  console.log('  WIF version byte:', '0x' + decoded[0].toString(16), decoded[0] === 0xef ? '(testnet)' : decoded[0] === 0x80 ? '(mainnet)' : decoded[0] === 0xbc ? '(old SDK)' : '(unknown)');
+  
+  // Update keys with derived address
+  if (keys.address !== derived.address) {
+    console.log('  ⚠️  Address mismatch! Updating to derived address...');
+    keys.address = derived.address;
+    keys.pubkey = derived.pubkey;
+    fs.writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2));
+    console.log('  ✅ Updated', KEYS_FILE);
+  }
   console.log();
 
   // Create agent
