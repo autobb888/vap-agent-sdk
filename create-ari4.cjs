@@ -20,6 +20,13 @@ async function main() {
   console.log('  WIF:', keys.wif.substring(0, 10) + '...');
 
   // Save keys immediately (before anything else)
+  // Backup existing keys if present
+  if (fs.existsSync(KEYS_FILE)) {
+    const backupFile = KEYS_FILE + '.backup.' + Date.now();
+    fs.copyFileSync(KEYS_FILE, backupFile);
+    console.log('  Backed up existing keys to', backupFile);
+  }
+  
   const keyData = {
     ...keys,
     network: 'verustest',
