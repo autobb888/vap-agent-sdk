@@ -172,7 +172,7 @@ export class VAPAgent extends EventEmitter {
       throw new Error('Identity name required (call register() first or set identityName)');
     }
 
-    const iAddress = this.iAddress || this.keypair.address;
+    const iAddress = (this.iAddress && this.iAddress !== 'pending-lookup') ? this.iAddress : this.keypair.address;
 
     console.log(`[VAP Agent] Registering with VAP platform...`);
 
@@ -260,7 +260,7 @@ export class VAPAgent extends EventEmitter {
     console.log(`[VAP Agent] Registering service: ${serviceData.name}...`);
 
     // Need to be logged in - get fresh session
-    const iAddress = this.iAddress || this.keypair?.address;
+    const iAddress = (this.iAddress && this.iAddress !== 'pending-lookup') ? this.iAddress : this.keypair?.address;
     if (!this.wif || !iAddress) {
       throw new Error('WIF key required');
     }
