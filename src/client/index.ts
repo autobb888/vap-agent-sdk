@@ -102,6 +102,83 @@ export class VAPClient {
   // Onboarding endpoints
   // ------------------------------------------
 
+  /** 
+   * ONE-STEP onboarding: Create identity with a WIF key (handles all steps internally)
+   * 
+   * @param name - Agent name (without @ suffix, e.g., 'myagent')
+   * @param wif - Private key in WIF format
+   * @param identityAddress - The expected i-address (for signing challenge)
+   * @returns OnboardStatus when complete
+   * 
+   * @example
+   * ```typescript
+   * import { VAPClient, signChallenge } from 'vap-agent-sdk';
+   * 
+   * const client = new VAPClient({ vapUrl: 'https://api.autobb.app' });
+   * const status = await client.registerIdentity('ari3', 'Uw...', 'i42...');
+   * console.log('Registered:', status.identity);
+   * ```
+   */
+  async registerIdentity(
+    name: string,
+    wif: string,
+    identityAddress: string,
+    network: 'verus' | 'verustest' = 'verustest'
+  ): Promise<OnboardStatus> {
+    const { generateKeypair, keypairFromWIF } = await import('../identity/keypair.js');
+    
+    // Get keypair info from WIF
+    const keypair = keypairFromWIF(wif, network);
+    
+    // Step 1: Get challenge
+    const challengeRes = await this.onboard(name, keypair.address, keypair.pubkey);
+    
+    if (!challengeRes.challenge || !challengeRes.token) {
+      throw new VAPError('Invalid challenge response', 'ONBOARD_ERROR', 500);
+    }
+    
+    // Step 2: Sign challenge (need to import signChallenge)
+    const { signChallenge } = await import('../identity/signer.js');
+    const signature = signChallenge(wif, challengeRes.challenge, identityAddress, network);
+    
+    // Step 3: Submit with signature
+    const result = await this.onboardWithSignature(
+      name,
+      keypair.address,
+      keypair.pubkey,
+      challengeRes.challenge,
+      challengeRes.token,
+      signature
+    );
+    
+    if (!result.onboardId) {
+      throw new VAPError('No onboardId received', 'ONBOARD_ERROR', 500);
+    }
+    
+    // Step 4: Poll until registered
+    return this.pollOnboardStatus(result.onboardId);
+  }
+
+  /** Poll onboarding status until complete or failed */
+  async pollOnboardStatus(onboardId: string, maxAttempts = 30, intervalMs = 10000): Promise<OnboardStatus> {
+    for (let i = 0; i < maxAttempts; i++) {
+      const status = await this.onboardStatus(onboardId);
+      
+      if (status.status === 'registered') {
+        return status;
+      }
+      
+      if (status.status === 'failed') {
+        throw new VAPError(status.error || 'Registration failed', 'ONBOARD_FAILED', 500);
+      }
+      
+      // Wait before next poll
+      await new Promise(r => setTimeout(r, intervalMs));
+    }
+    
+    throw new VAPError('Registration timeout', 'ONBOARD_TIMEOUT', 504);
+  }
+
   /** Request onboarding challenge (step 1) */
   async onboard(name: string, address: string, pubkey: string): Promise<OnboardResponse> {
     return this.request('POST', '/v1/onboard', { name, address, pubkey });
@@ -335,6 +412,8 @@ export interface OnboardResponse {
   identity?: string;
   iAddress?: string;
   txid?: string;
+  challenge?: string;
+  token?: string;
 }
 
 export interface OnboardStatus {
