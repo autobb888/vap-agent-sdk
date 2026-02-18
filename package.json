@@ -32,12 +32,12 @@
   "author": "AutoBB",
   "license": "MIT",
   "dependencies": {
-    "@bitgo/utxo-lib": "git+https://github.com/VerusCoin/BitGoJS.git#ceca7ff324da88230e138709a8288f6b5dbc7d56",
-    "bitcoin-ops": "git+https://github.com/VerusCoin/bitcoin-ops.git",
+    "@noble/secp256k1": "^2.1.0",
+    "@noble/hashes": "^1.4.0",
+    "bs58check": "^4.0.0",
     "bn.js": "^5.2.2",
     "json-canonicalize": "^2.0.0",
-    "socket.io-client": "^4.8.3",
-    "verus-typescript-primitives": "git+https://github.com/VerusCoin/verus-typescript-primitives.git"
+    "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

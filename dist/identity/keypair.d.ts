@@ -1,7 +1,6 @@
 /**
  * Keypair generation for Verus agents.
- * Uses @bitgo/utxo-lib (VerusCoin fork) for proper Verus address derivation.
- * Key generation uses crypto.randomBytes (Node.js CSPRNG) via ECPair.makeRandom().
+ * Uses minimal extracted utilities to avoid @bitgo/utxo-lib dependency issues.
  */
 export interface Keypair {
     /** WIF-encoded private key */

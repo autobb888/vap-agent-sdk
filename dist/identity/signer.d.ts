@@ -1,33 +1,10 @@
 /**
  * Message signing for Verus agents.
- * Uses @bitgo/utxo-lib (VerusCoin fork) for Verus-compatible signatures.
- * Compatible with `verus signmessage` / `verus verifymessage`.
+ * Uses minimal extracted utilities to avoid @bitgo/utxo-lib dependency issues.
  */
-/**
- * Sign a message with a WIF private key using the LEGACY format.
- * Compatible with `verus verifymessage` RPC (NOT IdentitySignature).
- * Used for: deletion attestations, general message signing.
- * For onboarding challenges, use signChallenge() instead (IdentitySignature format).
- *
- * Uses legacy signed message format:
- * 1. Prepend network-specific message prefix (e.g. "Verus signed data:\n")
- * 2. Double SHA-256
- * 3. Sign with secp256k1 ECDSA (compact format with recovery byte)
- * 4. Encode as Base64
- */
-export declare function signMessage(wif: string, message: string, networkName?: 'verus' | 'verustest'): string;
-/**
- * Sign a challenge for onboarding/auth verification.
- * Uses IdentitySignature from utxo-lib for Verus-compatible signatures.
- * Returns base64-encoded COMPACT signature (65 bytes) for local verification.
- *
- * NOTE: This returns the compact signature only, not the full serialized IdentitySignature.
- * The compact signature is what verifySignatureLocally expects.
- *
- * @param wif - Private key in WIF format
- * @param challenge - Message to sign
- * @param identityAddress - The i-address of the VerusID signing (e.g. "iHax5...") or R-address for onboarding
- * @param networkName - Network name ('verus' or 'verustest')
- */
-export declare function signChallenge(wif: string, challenge: string, identityAddress: string, networkName?: 'verus' | 'verustest'): string;
+import { signMessage as verusSignMessage, signChallenge as verusSignChallenge, keypairFromWIF as verusKeypairFromWIF, generateKeypair as verusGenerateKeypair } from './verus-sign.js';
+export { verusSignMessage as signMessage };
+export { verusSignChallenge as signChallenge };
+export { verusKeypairFromWIF as keypairFromWIF };
+export { verusGenerateKeypair as generateKeypair };
 //# sourceMappingURL=signer.d.ts.map

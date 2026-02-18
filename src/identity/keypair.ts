@@ -1,10 +1,12 @@
 /**
  * Keypair generation for Verus agents.
- * Uses @bitgo/utxo-lib (VerusCoin fork) for proper Verus address derivation.
- * Key generation uses crypto.randomBytes (Node.js CSPRNG) via ECPair.makeRandom().
+ * Uses minimal extracted utilities to avoid @bitgo/utxo-lib dependency issues.
  */
 
-const utxoLib = require('@bitgo/utxo-lib');
+import {
+  generateKeypair as verusGenerateKeypair,
+  keypairFromWIF as verusKeypairFromWIF,
+} from './verus-sign.js';
 
 export interface Keypair {
   /** WIF-encoded private key */
@@ -22,13 +24,11 @@ export interface Keypair {
  * @param networkName - 'verus' for mainnet, 'verustest' for testnet (default)
  */
 export function generateKeypair(networkName: 'verus' | 'verustest' = 'verustest'): Keypair {
-  const network = utxoLib.networks[networkName];
-  const keyPair = utxoLib.ECPair.makeRandom({ network, compressed: true });
-
+  const kp = verusGenerateKeypair(networkName);
   return {
-    wif: keyPair.toWIF(),
-    pubkey: keyPair.getPublicKeyBuffer().toString('hex'),
-    address: keyPair.getAddress(),
+    wif: kp.wif,
+    pubkey: kp.publicKey,
+    address: kp.address,
   };
 }
 
@@ -36,12 +36,10 @@ export function generateKeypair(networkName: 'verus' | 'verustest' = 'verustest'
  * Restore a keypair from a WIF private key.
  */
 export function keypairFromWIF(wif: string, networkName: 'verus' | 'verustest' = 'verustest'): Keypair {
-  const network = utxoLib.networks[networkName];
-  const keyPair = utxoLib.ECPair.fromWIF(wif, network);
-
+  const kp = verusKeypairFromWIF(wif, networkName);
   return {
-    wif: keyPair.toWIF(),
-    pubkey: keyPair.getPublicKeyBuffer().toString('hex'),
-    address: keyPair.getAddress(),
+    wif: kp.wif,
+    pubkey: kp.publicKey,
+    address: kp.address,
   };
 }
