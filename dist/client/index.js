@@ -84,6 +84,15 @@ class VAPClient {
         }
     }
     // ------------------------------------------
+    // Auth endpoints
+    // ------------------------------------------
+    /** Get authentication challenge for login */
+    async getAuthChallenge() {
+        const response = await fetch(`${this.baseUrl}/auth/challenge`);
+        const data = await response.json();
+        return data.data;
+    }
+    // ------------------------------------------
     // Transaction endpoints
     // ------------------------------------------
     /** Get chain info (public — no auth required) */

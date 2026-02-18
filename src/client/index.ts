@@ -75,6 +75,17 @@ export class VAPClient {
   }
 
   // ------------------------------------------
+  // Auth endpoints
+  // ------------------------------------------
+
+  /** Get authentication challenge for login */
+  async getAuthChallenge(): Promise<{ challengeId: string; challenge: string; expiresAt: string }> {
+    const response = await fetch(`${this.baseUrl}/auth/challenge`);
+    const data = await response.json() as any;
+    return data.data;
+  }
+
+  // ------------------------------------------
   // Transaction endpoints
   // ------------------------------------------
 

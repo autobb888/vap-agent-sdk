@@ -14,6 +14,39 @@
  * await agent.start();
  * ```
  */
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.VAPAgent = void 0;
 const node_events_1 = require("node:events");
@@ -36,8 +69,10 @@ class VAPAgent extends node_events_1.EventEmitter {
     running = false;
     chatClient = null;
     chatHandler = null;
+    vapUrl;
     constructor(config) {
         super();
+        this.vapUrl = config.vapUrl;
         this.client = new index_js_1.VAPClient({ vapUrl: config.vapUrl });
         this.wif = config.wif || null;
         this.identityName = config.identityName || null;
@@ -111,6 +146,115 @@ class VAPAgent extends node_events_1.EventEmitter {
         console.log(`[VAP Agent] ✅ Registered: ${this.identityName} (${this.iAddress})`);
         this.emit('registered', { identity: this.identityName, iAddress: this.iAddress });
         return { identity: this.identityName, iAddress: this.iAddress };
+    }
+    /**
+     * Register the agent with the VAP platform (after on-chain identity exists).
+     * This creates the agent profile and enables receiving jobs.
+     *
+     * @param agentData - Agent profile data
+     * @returns Registration result
+     */
+    async registerWithVAP(agentData) {
+        if (!this.wif || !this.keypair) {
+            throw new Error('WIF key required for registration');
+        }
+        if (!this.identityName) {
+            throw new Error('Identity name required (call register() first or set identityName)');
+        }
+        const iAddress = this.iAddress || this.keypair.address;
+        console.log(`[VAP Agent] Registering with VAP platform...`);
+        // Step 1: Login
+        console.log(`[VAP Agent] Logging in...`);
+        const challengeRes = await this.client.getAuthChallenge();
+        const signature = (0, signer_js_1.signChallenge)(this.wif, challengeRes.challenge, iAddress, this.networkType);
+        const loginRes = await fetch(`${this.vapUrl}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                challengeId: challengeRes.challengeId,
+                verusId: this.identityName,
+                signature,
+            }),
+        });
+        if (!loginRes.ok) {
+            const err = await loginRes.json();
+            throw new Error(`Login failed: ${err.error?.message || loginRes.statusText}`);
+        }
+        const cookies = loginRes.headers.get('set-cookie');
+        console.log(`[VAP Agent] ✅ Logged in`);
+        // Step 2: Register agent with signed payload
+        console.log(`[VAP Agent] Submitting registration...`);
+        const { randomUUID } = await Promise.resolve().then(() => __importStar(require('crypto')));
+        const { canonicalize } = await Promise.resolve().then(() => __importStar(require('json-canonicalize')));
+        const payload = {
+            verusId: this.identityName,
+            timestamp: Math.floor(Date.now() / 1000),
+            nonce: randomUUID(),
+            action: 'register',
+            data: agentData,
+        };
+        const message = canonicalize(payload);
+        const regSignature = (0, signer_js_1.signChallenge)(this.wif, message, iAddress, this.networkType);
+        const regRes = await fetch(`${this.vapUrl}/v1/agents/register`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Cookie': cookies || '',
+            },
+            body: JSON.stringify({ ...payload, signature: regSignature }),
+        });
+        const regData = await regRes.json();
+        if (regRes.status === 409) {
+            console.log(`[VAP Agent] Agent already registered`);
+            return { agentId: 'existing' };
+        }
+        if (!regRes.ok) {
+            throw new Error(`Registration failed: ${regData.error?.message || regRes.statusText}`);
+        }
+        console.log(`[VAP Agent] ✅ Registered with VAP platform`);
+        this.emit('registeredWithVAP', { agentId: regData.data?.agentId });
+        return { agentId: regData.data?.agentId };
+    }
+    /**
+     * Register a service offering.
+     * Must be called after registerWithVAP().
+     */
+    async registerService(serviceData) {
+        if (!this.identityName) {
+            throw new Error('Identity name required');
+        }
+        console.log(`[VAP Agent] Registering service: ${serviceData.name}...`);
+        // Need to be logged in - get fresh session
+        const iAddress = this.iAddress || this.keypair?.address;
+        if (!this.wif || !iAddress) {
+            throw new Error('WIF key required');
+        }
+        const challengeRes = await this.client.getAuthChallenge();
+        const signature = (0, signer_js_1.signChallenge)(this.wif, challengeRes.challenge, iAddress, this.networkType);
+        const loginRes = await fetch(`${this.vapUrl}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                challengeId: challengeRes.challengeId,
+                verusId: this.identityName,
+                signature,
+            }),
+        });
+        const cookies = loginRes.headers.get('set-cookie');
+        const serviceRes = await fetch(`${this.vapUrl}/v1/me/services`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Cookie': cookies || '',
+            },
+            body: JSON.stringify(serviceData),
+        });
+        const serviceData2 = await serviceRes.json();
+        if (!serviceRes.ok) {
+            throw new Error(`Service registration failed: ${serviceData2.error?.message || serviceRes.statusText}`);
+        }
+        console.log(`[VAP Agent] ✅ Service registered: ${serviceData.name}`);
+        return { serviceId: serviceData2.data?.serviceId };
     }
     /**
      * Set the job handler (how your agent responds to jobs).

@@ -50,6 +50,7 @@ export declare class VAPAgent extends EventEmitter {
     private running;
     private chatClient;
     private chatHandler;
+    private vapUrl;
     constructor(config: VAPAgentConfig);
     /**
      * Generate a new keypair for this agent.
@@ -66,6 +67,35 @@ export declare class VAPAgent extends EventEmitter {
     register(name: string, network?: 'verus' | 'verustest'): Promise<{
         identity: string;
         iAddress: string;
+    }>;
+    /**
+     * Register the agent with the VAP platform (after on-chain identity exists).
+     * This creates the agent profile and enables receiving jobs.
+     *
+     * @param agentData - Agent profile data
+     * @returns Registration result
+     */
+    registerWithVAP(agentData: {
+        name: string;
+        type?: 'autonomous' | 'assisted' | 'hybrid' | 'tool';
+        description?: string;
+        category?: string;
+    }): Promise<{
+        agentId: string;
+    }>;
+    /**
+     * Register a service offering.
+     * Must be called after registerWithVAP().
+     */
+    registerService(serviceData: {
+        name: string;
+        description?: string;
+        category?: string;
+        price?: number;
+        currency?: string;
+        turnaround?: string;
+    }): Promise<{
+        serviceId: string;
     }>;
     /**
      * Set the job handler (how your agent responds to jobs).

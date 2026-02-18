@@ -19,6 +19,12 @@ export declare class VAPClient {
     setSessionToken(token: string): void;
     getSessionToken(): string | null;
     private request;
+    /** Get authentication challenge for login */
+    getAuthChallenge(): Promise<{
+        challengeId: string;
+        challenge: string;
+        expiresAt: string;
+    }>;
     /** Get chain info (public — no auth required) */
     getChainInfo(): Promise<ChainInfo>;
     /** Get UTXOs for authenticated identity */
