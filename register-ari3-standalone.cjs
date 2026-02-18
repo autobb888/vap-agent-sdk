@@ -25,7 +25,16 @@ async function main() {
   }
 
   const keys = JSON.parse(fs.readFileSync(KEYS_FILE, 'utf8'));
-  console.log('Loaded keys for address:', keys.address);
+  console.log('Loaded keys:');
+  console.log('  Address from file:', keys.address);
+  console.log('  WIF:', keys.wif.substring(0, 10) + '...');
+
+  // Test keypair derivation
+  const { keypairFromWIF } = require('./dist/identity/keypair.js');
+  const derived = keypairFromWIF(keys.wif, 'verustest');
+  console.log('  Derived address:', derived.address);
+  console.log('  Derived pubkey:', derived.pubkey.substring(0, 20) + '...');
+  console.log();
 
   // Create agent
   const agent = new VAPAgent({
