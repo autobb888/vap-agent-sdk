@@ -181,8 +181,7 @@ export function signChallenge(
 
   // 5. SHA256(varint(msgLen) + lowercase(msg))
   const lowerMsg = Buffer.from(challenge.toLowerCase(), 'utf8');
-  if (lowerMsg.length >= 0xfd) throw new Error('Challenge too long');
-  const msgSlice = Buffer.concat([Buffer.from([lowerMsg.length]), lowerMsg]);
+  const msgSlice = Buffer.concat([encodeVarInt(lowerMsg.length), lowerMsg]);
   const msgHash = sha256(msgSlice);
 
   // 6. Final hash

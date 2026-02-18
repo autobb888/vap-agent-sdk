@@ -193,9 +193,7 @@ function signChallenge(wif, challenge, identityAddress, network = 'verustest') {
     const identityHash = chainIdHash;
     // 5. SHA256(varint(msgLen) + lowercase(msg))
     const lowerMsg = Buffer.from(challenge.toLowerCase(), 'utf8');
-    if (lowerMsg.length >= 0xfd)
-        throw new Error('Challenge too long');
-    const msgSlice = Buffer.concat([Buffer.from([lowerMsg.length]), lowerMsg]);
+    const msgSlice = Buffer.concat([encodeVarInt(lowerMsg.length), lowerMsg]);
     const msgHash = (0, sha2_1.sha256)(msgSlice);
     // 6. Final hash
     const finalHash = (0, sha2_1.sha256)(Buffer.concat([prefix, chainIdHash, heightBuf, identityHash, msgHash]));
