@@ -1,5 +1,5 @@
 /**
- * Setup ari4.agentplatform@ from scratch
+ * Setup ari5.agentplatform@ from scratch
  * Complete flow: generate keys → create identity → register with VAP → register service
  */
 
@@ -7,7 +7,7 @@ const { VAPAgent, generateKeypair } = require('./dist/index.js');
 const fs = require('fs');
 
 const KEYS_FILE = '/home/vap-av1/.vap-keys.json';
-const IDENTITY_NAME = 'ari4';
+const IDENTITY_NAME = 'ari5';
 
 async function main() {
   console.log('=== Ari4 Setup from Scratch ===\n');
