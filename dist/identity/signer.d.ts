@@ -19,11 +19,14 @@ export declare function signMessage(wif: string, message: string, networkName?: 
 /**
  * Sign a challenge for onboarding/auth verification.
  * Uses IdentitySignature from utxo-lib for Verus-compatible signatures.
- * Returns base64-encoded serialized CIdentitySignature (compatible with verusd verifymessage).
+ * Returns base64-encoded COMPACT signature (65 bytes) for local verification.
+ *
+ * NOTE: This returns the compact signature only, not the full serialized IdentitySignature.
+ * The compact signature is what verifySignatureLocally expects.
  *
  * @param wif - Private key in WIF format
  * @param challenge - Message to sign
- * @param identityAddress - The i-address of the VerusID signing (e.g. "iHax5...")
+ * @param identityAddress - The i-address of the VerusID signing (e.g. "iHax5...") or R-address for onboarding
  * @param networkName - Network name ('verus' or 'verustest')
  */
 export declare function signChallenge(wif: string, challenge: string, identityAddress: string, networkName?: 'verus' | 'verustest'): string;
