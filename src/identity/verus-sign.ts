@@ -6,7 +6,15 @@
 import * as crypto from 'crypto';
 import * as secp256k1 from '@noble/secp256k1';
 import { sha256 } from '@noble/hashes/sha2';
+import { hmac } from '@noble/hashes/hmac';
 import bs58check from 'bs58check';
+
+// Configure @noble/secp256k1 sync hash functions
+secp256k1.etc.hmacSha256Sync = (key: Uint8Array, ...messages: Uint8Array[]) => {
+  const h = hmac.create(sha256, key);
+  for (const msg of messages) h.update(msg);
+  return h.digest();
+};
 
 // Verus network constants
 const VERUS_NETWORK = {

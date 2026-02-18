@@ -47,7 +47,15 @@ exports.generateKeypair = generateKeypair;
 const crypto = __importStar(require("crypto"));
 const secp256k1 = __importStar(require("@noble/secp256k1"));
 const sha2_1 = require("@noble/hashes/sha2");
+const hmac_1 = require("@noble/hashes/hmac");
 const bs58check_1 = __importDefault(require("bs58check"));
+// Configure @noble/secp256k1 sync hash functions
+secp256k1.etc.hmacSha256Sync = (key, ...messages) => {
+    const h = hmac_1.hmac.create(sha2_1.sha256, key);
+    for (const msg of messages)
+        h.update(msg);
+    return h.digest();
+};
 // Verus network constants
 const VERUS_NETWORK = {
     messagePrefix: 'Verus signed data:\n',
