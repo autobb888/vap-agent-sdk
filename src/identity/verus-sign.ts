@@ -17,11 +17,12 @@ secp256k1.etc.hmacSha256Sync = (key: Uint8Array, ...messages: Uint8Array[]) => {
 };
 
 // Verus network constants
+// Note: The old SDK used 0xbc (188) for testnet WIF, not standard 0xef
 const VERUS_NETWORK = {
   messagePrefix: 'Verus signed data:\n',
   pubKeyHash: 0x3c,  // R-address prefix for testnet
   scriptHash: 0x3b,
-  wif: 0xef,
+  wif: 0xbc,  // Custom WIF version used by old SDK
 };
 
 const VERUS_MAINNET = {
