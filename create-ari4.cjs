@@ -47,7 +47,13 @@ async function main() {
 
   const result = await agent.register(IDENTITY_NAME, 'verustest');
   console.log('  ✅ Identity:', result.identity);
-  console.log('  ✅ I-Address:', result.iAddress);
+  
+  if (result.iAddress === 'pending-lookup') {
+    console.log('  ⏳ I-Address: pending (will be resolved shortly)');
+    console.log('  Using R-address for VAP registration...');
+  } else {
+    console.log('  ✅ I-Address:', result.iAddress);
+  }
 
   // Update keys file with i-address
   keyData.iAddress = result.iAddress;
