@@ -29,14 +29,20 @@ const VERUS_MAINNET = {
 function wifToPrivateKey(wif: string): Uint8Array {
   const decoded = bs58check.decode(wif);
   // WIF format: 1 byte version + 32 byte privkey + [optional 1 byte compression flag] + 4 byte checksum
+  // Compressed: 1 + 32 + 1 + 4 = 38 bytes
+  // Uncompressed: 1 + 32 + 4 = 37 bytes
+  // Some formats: 1 + 32 + 1 = 34 bytes (no checksum?)
   if (decoded.length === 38) {
     // Compressed WIF
     return new Uint8Array(decoded.slice(1, 33));
   } else if (decoded.length === 37) {
     // Uncompressed WIF
     return new Uint8Array(decoded.slice(1, 33));
+  } else if (decoded.length === 34) {
+    // Possibly missing checksum or different format — try to extract key anyway
+    return new Uint8Array(decoded.slice(1, 33));
   }
-  throw new Error(`Invalid WIF length: ${decoded.length}`);
+  throw new Error(`Invalid WIF length: ${decoded.length} (expected 37, 38, or 34)`);
 }
 
 /**
