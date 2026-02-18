@@ -143,6 +143,26 @@ export class VAPAgent extends EventEmitter {
       throw new Error('Registration timed out — check status manually');
     }
 
+    // Wait for real i-address (not 'pending-lookup')
+    if (!status.iAddress || status.iAddress === 'pending-lookup') {
+      console.log(`[VAP Agent] Waiting for i-address from VAP...`);
+      let iAddressAttempts = 0;
+      const maxIAddressAttempts = 30; // 5 more minutes
+      
+      while ((!status.iAddress || status.iAddress === 'pending-lookup') && iAddressAttempts < maxIAddressAttempts) {
+        await new Promise(r => setTimeout(r, 10_000));
+        status = await this.client.onboardStatus(result.onboardId);
+        iAddressAttempts++;
+        if (iAddressAttempts % 6 === 0) {
+          console.log(`[VAP Agent] Still waiting for i-address... (${Math.round(iAddressAttempts * 10 / 60)}min elapsed)`);
+        }
+      }
+      
+      if (!status.iAddress || status.iAddress === 'pending-lookup') {
+        throw new Error('VAP did not return i-address — contact platform admin');
+      }
+    }
+
     this.identityName = status.identity!;
     this.iAddress = status.iAddress!;
 
@@ -172,7 +192,7 @@ export class VAPAgent extends EventEmitter {
       throw new Error('Identity name required (call register() first or set identityName)');
     }
 
-    const iAddress = (this.iAddress && this.iAddress !== 'pending-lookup') ? this.iAddress : this.keypair.address;
+    const iAddress = this.iAddress || this.keypair.address;
 
     console.log(`[VAP Agent] Registering with VAP platform...`);
 
@@ -260,7 +280,7 @@ export class VAPAgent extends EventEmitter {
     console.log(`[VAP Agent] Registering service: ${serviceData.name}...`);
 
     // Need to be logged in - get fresh session
-    const iAddress = (this.iAddress && this.iAddress !== 'pending-lookup') ? this.iAddress : this.keypair?.address;
+    const iAddress = this.iAddress || this.keypair?.address;
     if (!this.wif || !iAddress) {
       throw new Error('WIF key required');
     }
