@@ -23,7 +23,14 @@ async function main() {
   // Step 1: Login
   console.log('\n[1/3] Logging in...');
   const challengeRes = await fetch(API + '/auth/challenge');
-  const { challengeId, challenge } = await challengeRes.json();
+  const challengeData = await challengeRes.json();
+  console.log('Challenge response:', challengeData);
+  
+  const { challengeId, challenge } = challengeData;
+  if (!challenge) {
+    console.error('No challenge in response');
+    process.exit(1);
+  }
   
   const signature = signChallenge(keys.wif, challenge, keys.address, 'verustest');
   
