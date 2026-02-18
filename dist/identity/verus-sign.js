@@ -49,6 +49,8 @@ const secp256k1 = __importStar(require("@noble/secp256k1"));
 const sha2_1 = require("@noble/hashes/sha2");
 const hmac_1 = require("@noble/hashes/hmac");
 const bs58check_1 = __importDefault(require("bs58check"));
+// @ts-ignore - no types available
+const ripemd160 = __importStar(require("ripemd160"));
 // Configure @noble/secp256k1 sync hash functions
 secp256k1.etc.hmacSha256Sync = (key, ...messages) => {
     const h = hmac_1.hmac.create(sha2_1.sha256, key);
@@ -102,13 +104,12 @@ function privateKeyToPublicKey(privKey, compressed = true) {
 }
 /**
  * Hash160 (RIPEMD160(SHA256(data)))
- * Note: We use SHA256 twice as a fallback since RIPEMD160 isn't in @noble/hashes
  */
 function hash160(data) {
     const sha = (0, sha2_1.sha256)(data);
-    // For now, use first 20 bytes of SHA256 as a placeholder
-    // Full implementation would use RIPEMD160
-    return sha.slice(0, 20);
+    const ripe = new ripemd160.default();
+    ripe.update(Buffer.from(sha));
+    return new Uint8Array(ripe.digest());
 }
 /**
  * Private key to R-address

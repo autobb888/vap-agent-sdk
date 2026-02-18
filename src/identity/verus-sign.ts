@@ -9,6 +9,9 @@ import { sha256 } from '@noble/hashes/sha2';
 import { hmac } from '@noble/hashes/hmac';
 import bs58check from 'bs58check';
 
+// @ts-ignore - no types available
+import * as ripemd160 from 'ripemd160';
+
 // Configure @noble/secp256k1 sync hash functions
 secp256k1.etc.hmacSha256Sync = (key: Uint8Array, ...messages: Uint8Array[]) => {
   const h = hmac.create(sha256, key);
@@ -64,13 +67,12 @@ function privateKeyToPublicKey(privKey: Uint8Array, compressed: boolean = true):
 
 /**
  * Hash160 (RIPEMD160(SHA256(data)))
- * Note: We use SHA256 twice as a fallback since RIPEMD160 isn't in @noble/hashes
  */
 function hash160(data: Uint8Array): Uint8Array {
   const sha = sha256(data);
-  // For now, use first 20 bytes of SHA256 as a placeholder
-  // Full implementation would use RIPEMD160
-  return sha.slice(0, 20);
+  const ripe = new ripemd160.default();
+  ripe.update(Buffer.from(sha));
+  return new Uint8Array(ripe.digest());
 }
 
 /**
