@@ -26,7 +26,7 @@ async function main() {
   const challengeData = await challengeRes.json();
   console.log('Challenge response:', challengeData);
   
-  const { challengeId, challenge } = challengeData;
+  const { challengeId, challenge } = challengeData.data;
   if (!challenge) {
     console.error('No challenge in response');
     process.exit(1);
