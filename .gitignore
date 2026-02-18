@@ -1,8 +1,6 @@
 node_modules/
-dist/
 .env
 vap-agent.yml
 *.map
 *.tsbuildinfo
-.vap-keys.json
 .vap-keys.json
