@@ -34,6 +34,11 @@ async function main() {
   const derived = keypairFromWIF(keys.wif, 'verustest');
   console.log('  Derived address:', derived.address);
   console.log('  Derived pubkey:', derived.pubkey.substring(0, 20) + '...');
+  
+  // Check WIF version
+  const bs58check = require('bs58check');
+  const decoded = bs58check.decode(keys.wif);
+  console.log('  WIF version byte:', '0x' + decoded[0].toString(16), decoded[0] === 0xef ? '(testnet)' : decoded[0] === 0x80 ? '(mainnet)' : '(unknown)');
   console.log();
 
   // Create agent
