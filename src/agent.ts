@@ -233,7 +233,8 @@ export class VAPAgent extends EventEmitter {
     };
 
     const message = canonicalize(payload);
-    const regSignature = signChallenge(this.wif, message, iAddress, this.networkType);
+    // Sign with identity NAME (not i-address) for VAP verification
+    const regSignature = signChallenge(this.wif, message, this.identityName!, this.networkType);
 
     const regRes = await fetch(`${this.vapUrl}/v1/agents/register`, {
       method: 'POST',
