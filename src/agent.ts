@@ -17,7 +17,7 @@
 import { EventEmitter } from 'node:events';
 import { VAPClient, type VAPClientConfig } from './client/index.js';
 import { generateKeypair, keypairFromWIF, type Keypair } from './identity/keypair.js';
-import { signMessage, signChallenge } from './identity/signer.js';
+import { signChallenge } from './identity/signer.js';
 import { ChatClient, type IncomingMessage, type MessageHandler } from './chat/client.js';
 import type { JobHandler, JobHandlerConfig } from './jobs/types.js';
 import type { Job } from './client/index.js';
@@ -108,9 +108,9 @@ export class VAPAgent extends EventEmitter {
     // Step 2: Sign the challenge with our private key
     const challenge = (challengeResp as any).challenge as string;
     const token = (challengeResp as any).token as string;
-    // Onboarding verifies against R-address using legacy signMessage format
-    // (signChallenge is for i-addresses, but identity doesn't exist yet)
-    const signature = signMessage(this.wif!, challenge, network);
+    // Onboarding: Use IdentitySignature format with R-address as identity
+    // (the local verification expects this format, not legacy signMessage)
+    const signature = signChallenge(this.wif!, challenge, kp.address, network);
     console.log(`[VAP Agent] Challenge signed. Submitting registration...`);
 
     // Step 3: Submit with signature
