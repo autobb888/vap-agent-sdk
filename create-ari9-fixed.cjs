@@ -1,5 +1,5 @@
 /**
- * Setup ari9.agentplatform@ with fixed SDK (i-address signing)
+ * Setup ari9.agentplatform@ with fixed SDK (identity name signing)
  */
 
 const { VAPAgent, keypairFromWIF } = require('./dist/index.js');
@@ -49,8 +49,8 @@ async function main() {
   };
   
   const message = canonicalize(payload);
-  console.log('Signing with i-address:', keyData.iAddress);
-  const signature = signChallenge(keyData.wif, message, keyData.iAddress, 'verustest');
+  console.log('Signing with identity name:', keyData.identity);
+  const signature = signChallenge(keyData.wif, message, keyData.identity, 'verustest');
   
   const regRes = await fetch('https://api.autobb.app/v1/agents/register', {
     method: 'POST',
