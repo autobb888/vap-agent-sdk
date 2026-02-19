@@ -1,7 +1,7 @@
 "use strict";
 /**
- * Minimal Verus signing utilities
- * Extracted from @bitgo/utxo-lib Verus fork to avoid dependency issues
+ * Message signing for Verus agents.
+ * Uses @bitgo/utxo-lib (VerusCoin fork) for proper CIdentitySignature support.
  */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -51,6 +51,9 @@ const hmac_1 = require("@noble/hashes/hmac");
 const bs58check_1 = __importDefault(require("bs58check"));
 // @ts-ignore - no types available
 const ripemd160 = __importStar(require("ripemd160"));
+// @bitgo/utxo-lib (VerusCoin fork) for IdentitySignature
+// @ts-ignore
+const IdentitySignature_1 = require("@bitgo/utxo-lib/dist/cjs/vrsc/IdentitySignature");
 // Configure @noble/secp256k1 sync hash functions
 secp256k1.etc.hmacSha256Sync = (key, ...messages) => {
     const h = hmac_1.hmac.create(sha2_1.sha256, key);
@@ -59,16 +62,15 @@ secp256k1.etc.hmacSha256Sync = (key, ...messages) => {
     return h.digest();
 };
 // Verus network constants
-// Note: The old SDK used 0xbc (188) for testnet WIF, not standard 0xef
 const VERUS_NETWORK = {
     messagePrefix: 'Verus signed data:\n',
-    pubKeyHash: 0x3c, // R-address prefix for testnet
+    pubKeyHash: 0x3c,
     scriptHash: 0x3b,
-    wif: 0xbc, // Custom WIF version used by old SDK
+    wif: 0xbc,
 };
 const VERUS_MAINNET = {
     messagePrefix: 'Verus signed data:\n',
-    pubKeyHash: 0x3b, // R-address prefix for mainnet
+    pubKeyHash: 0x3b,
     scriptHash: 0x3c,
     wif: 0x80,
 };
@@ -77,30 +79,22 @@ const VERUS_MAINNET = {
  */
 function wifToPrivateKey(wif) {
     const decoded = bs58check_1.default.decode(wif);
-    // WIF format: 1 byte version + 32 byte privkey + [optional 1 byte compression flag] + 4 byte checksum
-    // Compressed: 1 + 32 + 1 + 4 = 38 bytes
-    // Uncompressed: 1 + 32 + 4 = 37 bytes
-    // Some formats: 1 + 32 + 1 = 34 bytes (no checksum?)
     if (decoded.length === 38) {
-        // Compressed WIF
         return new Uint8Array(decoded.slice(1, 33));
     }
     else if (decoded.length === 37) {
-        // Uncompressed WIF
         return new Uint8Array(decoded.slice(1, 33));
     }
     else if (decoded.length === 34) {
-        // Possibly missing checksum or different format — try to extract key anyway
         return new Uint8Array(decoded.slice(1, 33));
     }
-    throw new Error(`Invalid WIF length: ${decoded.length} (expected 37, 38, or 34)`);
+    throw new Error(`Invalid WIF length: ${decoded.length}`);
 }
 /**
  * Get public key from private key
  */
 function privateKeyToPublicKey(privKey, compressed = true) {
-    const pubkey = secp256k1.getPublicKey(privKey, compressed);
-    return pubkey;
+    return secp256k1.getPublicKey(privKey, compressed);
 }
 /**
  * Hash160 (RIPEMD160(SHA256(data)))
@@ -144,89 +138,53 @@ function encodeVarInt(n) {
 function signMessage(wif, message, network = 'verustest') {
     const privKey = wifToPrivateKey(wif);
     const networkConfig = network === 'verustest' ? VERUS_NETWORK : VERUS_MAINNET;
-    // Build message: prefix + varint(length) + message
     const prefix = Buffer.from(networkConfig.messagePrefix, 'utf8');
     const msgBuf = Buffer.from(message, 'utf8');
     const lenBuf = encodeVarInt(msgBuf.length);
     const fullMessage = Buffer.concat([prefix, lenBuf, msgBuf]);
-    // Double SHA-256
     const msgHash = crypto.createHash('sha256')
         .update(crypto.createHash('sha256').update(fullMessage).digest())
         .digest();
-    // Sign with secp256k1
     const signature = secp256k1.sign(msgHash, privKey);
-    // Get recovery ID
     const pubkey = privateKeyToPublicKey(privKey, true);
     const compressed = pubkey.length === 33;
-    // Build compact signature
     const compactSig = Buffer.alloc(65);
     compactSig[0] = signature.recovery + 27 + (compressed ? 4 : 0);
     Buffer.from(signature.toCompactRawBytes()).copy(compactSig, 1);
     return compactSig.toString('base64');
 }
 /**
- * Sign a challenge (IdentitySignature format for onboarding)
+ * Sign a challenge (CIdentitySignature format)
  *
- * This creates a signature compatible with VAP's local verification:
- * - version=2, hashType=5 (SHA256), blockHeight=0
- * - chainId = VRSCTEST system ID
- * - identity = R-address (for onboarding)
+ * Uses @bitgo/utxo-lib IdentitySignature for proper Verus compatibility.
+ * The identityAddress can be:
+ * - R-address (onboarding): signs with chainId as identity
+ * - i-address (login/registration): signs with the i-address identity
+ * - Identity name: resolves to the appropriate identity
  */
 function signChallenge(wif, challenge, identityAddress, network = 'verustest') {
     const privKey = wifToPrivateKey(wif);
-    const pubkeyBuf = Buffer.from(privateKeyToPublicKey(privKey, true));
-    const compressed = true;
-    // Chain ID for VRSCTEST
-    const chainId = 'iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq';
-    const chainIdDecoded = bs58check_1.default.decode(chainId);
-    const chainIdHash = chainIdDecoded.slice(1); // skip version byte
-    // Build message hash according to IdentitySignature.hashMessage:
-    // SHA256(prefix + chainIdHash + blockHeight(4) + identityHash + SHA256(varint(msgLen) + lowercase(msg)))
-    // 1. Prefix
-    const prefixStr = 'Verus signed data:\n';
-    const prefix = Buffer.concat([Buffer.from([prefixStr.length]), Buffer.from(prefixStr)]);
-    // 2. chainId hash (20 bytes)
-    // Already have chainIdHash
-    // 3. blockHeight = 0 (4 bytes LE)
-    const heightBuf = Buffer.alloc(4, 0);
-    // 4. identity hash — derive from provided identityAddress
-    // For R-addresses (onboarding), use chainIdHash
-    // For i-addresses (login/registration), the identityHash is Hash160 of the identity name
-    // For identity names (e.g., "ari9.agentplatform@"), compute Hash160 of the name
-    let identityHash;
-    if (identityAddress.startsWith('R') || identityAddress.startsWith('V')) {
-        // R-address provided (onboarding) — use chainIdHash
-        identityHash = chainIdHash;
+    // Get private key as hex for IdentitySignature
+    const privKeyHex = Buffer.from(privKey).toString('hex');
+    // Determine the signing identity
+    // For R-addresses (onboarding), the SDK uses the R-address itself in some contexts
+    // For i-addresses/login, use the i-address
+    const signingIdentity = identityAddress;
+    // Use IdentitySignature from @bitgo/utxo-lib for proper CIdentitySignature format
+    // version=2, hashType=5 (SHA256), blockHeight=0
+    try {
+        const idSig = IdentitySignature_1.IdentitySignature.signMessageOffline(challenge, signingIdentity, privKeyHex, 2, // version
+        5, // hashType (SHA256)
+        0, // blockHeight
+        'VRSCTEST' // system ID
+        );
+        // Return serialized CIdentitySignature (base64)
+        return idSig.toBuffer().toString('base64');
     }
-    else if (identityAddress.startsWith('i')) {
-        // i-address provided — need to look up identity name or use provided context
-        // For now, decode the i-address (this works if the i-address contains the ID)
-        const decoded = bs58check_1.default.decode(identityAddress);
-        identityHash = decoded.slice(1); // skip version byte (0x66 for i-address)
+    catch (err) {
+        console.error('[signChallenge] IdentitySignature failed:', err);
+        throw err;
     }
-    else if (identityAddress.includes('@')) {
-        // Identity name provided (e.g., "ari9.agentplatform@")
-        // Compute identity hash: Hash160(identity name)
-        const nameBuf = Buffer.from(identityAddress.toLowerCase(), 'utf8');
-        identityHash = hash160(nameBuf);
-    }
-    else {
-        // Fallback to chainIdHash for unknown formats
-        identityHash = chainIdHash;
-    }
-    // 5. SHA256(varint(msgLen) + lowercase(msg))
-    const lowerMsg = Buffer.from(challenge.toLowerCase(), 'utf8');
-    const msgSlice = Buffer.concat([encodeVarInt(lowerMsg.length), lowerMsg]);
-    const msgHash = (0, sha2_1.sha256)(msgSlice);
-    // 6. Final hash
-    const finalHash = (0, sha2_1.sha256)(Buffer.concat([prefix, chainIdHash, heightBuf, identityHash, msgHash]));
-    // Sign
-    const signature = secp256k1.sign(finalHash, privKey);
-    // Build compact signature
-    const compactSig = Buffer.alloc(65);
-    compactSig[0] = signature.recovery + 27 + (compressed ? 4 : 0);
-    Buffer.from(signature.toCompactRawBytes()).copy(compactSig, 1);
-    return compactSig.toString('base64');
 }
 /**
  * Generate keypair from WIF

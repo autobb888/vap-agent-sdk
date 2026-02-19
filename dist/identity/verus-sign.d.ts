@@ -1,18 +1,19 @@
 /**
- * Minimal Verus signing utilities
- * Extracted from @bitgo/utxo-lib Verus fork to avoid dependency issues
+ * Message signing for Verus agents.
+ * Uses @bitgo/utxo-lib (VerusCoin fork) for proper CIdentitySignature support.
  */
 /**
  * Sign a message (legacy format compatible with verus verifymessage)
  */
 export declare function signMessage(wif: string, message: string, network?: 'verus' | 'verustest'): string;
 /**
- * Sign a challenge (IdentitySignature format for onboarding)
+ * Sign a challenge (CIdentitySignature format)
  *
- * This creates a signature compatible with VAP's local verification:
- * - version=2, hashType=5 (SHA256), blockHeight=0
- * - chainId = VRSCTEST system ID
- * - identity = R-address (for onboarding)
+ * Uses @bitgo/utxo-lib IdentitySignature for proper Verus compatibility.
+ * The identityAddress can be:
+ * - R-address (onboarding): signs with chainId as identity
+ * - i-address (login/registration): signs with the i-address identity
+ * - Identity name: resolves to the appropriate identity
  */
 export declare function signChallenge(wif: string, challenge: string, identityAddress: string, network?: 'verus' | 'verustest'): string;
 /**

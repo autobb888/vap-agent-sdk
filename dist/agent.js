@@ -211,7 +211,7 @@ class VAPAgent extends node_events_1.EventEmitter {
             data: agentData,
         };
         const message = canonicalize(payload);
-        // Sign with identity NAME for VAP verification (server resolves to i-address)
+        // Sign with identity name — IdentitySignature handles the proper format
         const regSignature = (0, signer_js_1.signChallenge)(this.wif, message, this.identityName, this.networkType);
         const regRes = await fetch(`${this.vapUrl}/v1/agents/register`, {
             method: 'POST',
