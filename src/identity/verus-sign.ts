@@ -191,8 +191,9 @@ export function signChallenge(
     throw err;
   }
   
-  // Return serialized CIdentitySignature (base64)
-  return idSig.toBuffer().toString('base64');
+  // Return compact signature (65 bytes) for both R-address and i-address
+  // Server verifymessage expects 65-byte compact signature
+  return idSig.signatures[0].toString('base64');
 }
 
 /**
