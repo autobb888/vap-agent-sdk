@@ -158,14 +158,15 @@ function signMessage(wif, message, network = 'verustest') {
  */
 function signChallenge(wif, challenge, identityAddress, network = 'verustest') {
     const networkObj = network === 'verustest' ? networks.verustest : networks.verus;
-    // Determine signing identity
-    // For onboarding with R-address, use null identity (chainID only)
-    // For login/registration with identity, use the identity address
-    let signingIdentity = identityAddress;
-    if (identityAddress.startsWith('R') || identityAddress.startsWith('V')) {
-        // R-address — onboarding, use chainID as identity
-        signingIdentity = null;
-    }
+    // Determine signing identity for CIdentitySignature
+    // For R-address (onboarding): use chainId as identity (server expects this)
+    // For i-address (login/registration): use the i-address
+    const chainId = network === 'verustest'
+        ? 'iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq'
+        : 'i5w5MuNik5NtLmYmNy2rTXXWiAK3K4Ef3p';
+    const signingIdentity = (identityAddress.startsWith('R') || identityAddress.startsWith('V'))
+        ? chainId // Onboarding: use chainId as identity
+        : identityAddress; // Login/registration: use i-address
     // Get keyPair from WIF
     let keyPair;
     try {
@@ -179,10 +180,7 @@ function signChallenge(wif, challenge, identityAddress, network = 'verustest') {
     }
     // Create IdentitySignature
     // version=2, hashType=5 (SHA256), blockHeight=0
-    // VRSCTEST chain ID: iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq
-    const chainId = network === 'verustest'
-        ? 'iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq'
-        : 'i5w5MuNik5NtLmYmNy2rTXXWiAK3K4Ef3p'; // VRSC mainnet
+    // chainId already defined above
     let idSig;
     try {
         idSig = new IdentitySignature(networkObj, 2, // version
