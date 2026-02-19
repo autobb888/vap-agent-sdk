@@ -33,7 +33,7 @@
   "license": "MIT",
   "dependencies": {
     "@bitgo/utxo-lib": "github:VerusCoin/BitGoJS#5e82f4fd",
-    "@noble/secp256k1": "^2.1.0",
+    "@noble/secp256k1": "^3.0.0",
     "@noble/hashes": "^1.4.0",
     "bs58check": "^4.0.0",
     "bn.js": "^5.2.2",
