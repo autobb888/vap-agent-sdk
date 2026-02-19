@@ -10,10 +10,12 @@ export declare function signMessage(wif: string, message: string, network?: 'ver
  * Sign a challenge (CIdentitySignature format)
  *
  * Uses @bitgo/utxo-lib IdentitySignature for proper Verus compatibility.
- * The identityAddress can be:
- * - R-address (onboarding): signs with chainId as identity
- * - i-address (login/registration): signs with the i-address identity
- * - Identity name: resolves to the appropriate identity
+ *
+ * @param wif - Private key in WIF format
+ * @param challenge - The message/challenge to sign
+ * @param identityAddress - The VerusID (name@) or i-address signing
+ * @param network - 'verus' or 'verustest'
+ * @returns Base64-encoded CIdentitySignature
  */
 export declare function signChallenge(wif: string, challenge: string, identityAddress: string, network?: 'verus' | 'verustest'): string;
 /**

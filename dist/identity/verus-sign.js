@@ -51,9 +51,10 @@ const hmac_1 = require("@noble/hashes/hmac");
 const bs58check_1 = __importDefault(require("bs58check"));
 // @ts-ignore - no types available
 const ripemd160 = __importStar(require("ripemd160"));
-// @bitgo/utxo-lib (VerusCoin fork) for IdentitySignature
+// @bitgo/utxo-lib (VerusCoin fork)
 // @ts-ignore
-const IdentitySignature_1 = require("@bitgo/utxo-lib/dist/cjs/vrsc/IdentitySignature");
+const utxolib = require('@bitgo/utxo-lib/dist/src');
+const { ECPair, IdentitySignature, networks } = utxolib;
 // Configure @noble/secp256k1 sync hash functions
 secp256k1.etc.hmacSha256Sync = (key, ...messages) => {
     const h = hmac_1.hmac.create(sha2_1.sha256, key);
@@ -157,34 +158,39 @@ function signMessage(wif, message, network = 'verustest') {
  * Sign a challenge (CIdentitySignature format)
  *
  * Uses @bitgo/utxo-lib IdentitySignature for proper Verus compatibility.
- * The identityAddress can be:
- * - R-address (onboarding): signs with chainId as identity
- * - i-address (login/registration): signs with the i-address identity
- * - Identity name: resolves to the appropriate identity
+ *
+ * @param wif - Private key in WIF format
+ * @param challenge - The message/challenge to sign
+ * @param identityAddress - The VerusID (name@) or i-address signing
+ * @param network - 'verus' or 'verustest'
+ * @returns Base64-encoded CIdentitySignature
  */
 function signChallenge(wif, challenge, identityAddress, network = 'verustest') {
     const privKey = wifToPrivateKey(wif);
-    // Get private key as hex for IdentitySignature
-    const privKeyHex = Buffer.from(privKey).toString('hex');
-    // Determine the signing identity
-    // For R-addresses (onboarding), the SDK uses the R-address itself in some contexts
-    // For i-addresses/login, use the i-address
-    const signingIdentity = identityAddress;
-    // Use IdentitySignature from @bitgo/utxo-lib for proper CIdentitySignature format
+    // Get ECPair from WIF for @bitgo/utxo-lib
+    const networkObj = network === 'verustest' ? networks.verustest : networks.verus;
+    const keyPair = ECPair.fromWIF(wif, networkObj);
+    // Determine signing identity
+    // For onboarding with R-address, use null identity (chainID only)
+    // For login/registration with identity, use the identity address
+    let signingIdentity = identityAddress;
+    if (identityAddress.startsWith('R') || identityAddress.startsWith('V')) {
+        // R-address — onboarding, use chainID as identity
+        signingIdentity = null;
+    }
+    // Create IdentitySignature
     // version=2, hashType=5 (SHA256), blockHeight=0
-    try {
-        const idSig = IdentitySignature_1.IdentitySignature.signMessageOffline(challenge, signingIdentity, privKeyHex, 2, // version
-        5, // hashType (SHA256)
-        0, // blockHeight
-        'VRSCTEST' // system ID
-        );
-        // Return serialized CIdentitySignature (base64)
-        return idSig.toBuffer().toString('base64');
-    }
-    catch (err) {
-        console.error('[signChallenge] IdentitySignature failed:', err);
-        throw err;
-    }
+    const idSig = new IdentitySignature(networkObj, 2, // version
+    5, // hashType (SHA256)
+    0, // blockHeight
+    [], // signatures (will be filled by sign)
+    null, // chainId (auto from network)
+    signingIdentity // identity (i-address or null for R-address)
+    );
+    // Sign the message
+    idSig.signMessageOffline(challenge, keyPair);
+    // Return serialized CIdentitySignature (base64)
+    return idSig.toBuffer().toString('base64');
 }
 /**
  * Generate keypair from WIF
