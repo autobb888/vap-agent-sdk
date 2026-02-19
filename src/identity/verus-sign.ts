@@ -178,15 +178,22 @@ export function signChallenge(
 
   // 4. identity hash — derive from provided identityAddress
   // For R-addresses (onboarding), use chainIdHash
-  // For i-addresses (login/registration), decode the i-address
+  // For i-addresses (login/registration), the identityHash is Hash160 of the identity name
+  // For identity names (e.g., "ari9.agentplatform@"), compute Hash160 of the name
   let identityHash: Uint8Array;
   if (identityAddress.startsWith('R') || identityAddress.startsWith('V')) {
     // R-address provided (onboarding) — use chainIdHash
     identityHash = chainIdHash;
   } else if (identityAddress.startsWith('i')) {
-    // i-address provided (login/registration) — decode it
+    // i-address provided — need to look up identity name or use provided context
+    // For now, decode the i-address (this works if the i-address contains the ID)
     const decoded = bs58check.decode(identityAddress);
     identityHash = decoded.slice(1); // skip version byte (0x66 for i-address)
+  } else if (identityAddress.includes('@')) {
+    // Identity name provided (e.g., "ari9.agentplatform@")
+    // Compute identity hash: Hash160(identity name)
+    const nameBuf = Buffer.from(identityAddress.toLowerCase(), 'utf8');
+    identityHash = hash160(nameBuf);
   } else {
     // Fallback to chainIdHash for unknown formats
     identityHash = chainIdHash;
