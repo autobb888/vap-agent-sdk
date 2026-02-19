@@ -150,22 +150,42 @@ export function signChallenge(
   }
   
   // Get keyPair from WIF
-  const keyPair = ECPair.fromWIF(wif, networkObj);
+  let keyPair;
+  try {
+    keyPair = ECPair.fromWIF(wif, networkObj);
+  } catch (err: any) {
+    console.error('[signChallenge] ECPair.fromWIF failed:', err.message);
+    console.error('[signChallenge] WIF:', wif.slice(0, 10) + '...');
+    console.error('[signChallenge] Network:', network);
+    throw err;
+  }
   
   // Create IdentitySignature
   // version=2, hashType=5 (SHA256), blockHeight=0
-  const idSig = new IdentitySignature(
-    networkObj,
-    2,    // version
-    5,    // hashType (SHA256)
-    0,    // blockHeight
-    [],   // signatures (will be filled by sign)
-    null, // chainId (auto from network)
-    signingIdentity // identity (i-address or null for R-address)
-  );
+  let idSig;
+  try {
+    idSig = new IdentitySignature(
+      networkObj,
+      2,    // version
+      5,    // hashType (SHA256)
+      0,    // blockHeight
+      [],   // signatures (will be filled by sign)
+      null, // chainId (auto from network)
+      signingIdentity // identity (i-address or null for R-address)
+    );
+  } catch (err: any) {
+    console.error('[signChallenge] new IdentitySignature failed:', err.message);
+    console.error('[signChallenge] signingIdentity:', signingIdentity);
+    throw err;
+  }
   
   // Sign the message
-  idSig.signMessageOffline(challenge, keyPair);
+  try {
+    idSig.signMessageOffline(challenge, keyPair);
+  } catch (err: any) {
+    console.error('[signChallenge] signMessageOffline failed:', err.message);
+    throw err;
+  }
   
   // Return serialized CIdentitySignature (base64)
   return idSig.toBuffer().toString('base64');
