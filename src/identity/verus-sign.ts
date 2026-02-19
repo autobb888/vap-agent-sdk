@@ -162,6 +162,11 @@ export function signChallenge(
   
   // Create IdentitySignature
   // version=2, hashType=5 (SHA256), blockHeight=0
+  // VRSCTEST chain ID: iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq
+  const chainId = network === 'verustest' 
+    ? 'iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq' 
+    : 'i5w5MuNik5NtLmYmNy2rTXXWiAK3K4Ef3p'; // VRSC mainnet
+  
   let idSig;
   try {
     idSig = new IdentitySignature(
@@ -170,12 +175,13 @@ export function signChallenge(
       5,    // hashType (SHA256)
       0,    // blockHeight
       [],   // signatures (will be filled by sign)
-      null, // chainId (auto from network)
+      chainId, // chain ID (required!)
       signingIdentity // identity (i-address or null for R-address)
     );
   } catch (err: any) {
     console.error('[signChallenge] new IdentitySignature failed:', err.message);
     console.error('[signChallenge] signingIdentity:', signingIdentity);
+    console.error('[signChallenge] chainId:', chainId);
     throw err;
   }
   
