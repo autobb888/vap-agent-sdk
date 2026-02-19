@@ -13,8 +13,13 @@ import bs58check from 'bs58check';
 import * as ripemd160 from 'ripemd160';
 
 // @bitgo/utxo-lib (VerusCoin fork)
-// @ts-ignore
-const utxolib = require('@bitgo/utxo-lib/dist/src');
+// Try local first, fall back to verusid-login copy
+let utxolib: any;
+try {
+  utxolib = require('@bitgo/utxo-lib/dist/src');
+} catch {
+  utxolib = require('/home/vap-av1/verusid-login/server/node_modules/@bitgo/utxo-lib/dist/src');
+}
 const { ECPair, IdentitySignature, networks } = utxolib;
 
 // Configure @noble/secp256k1 sync hash functions

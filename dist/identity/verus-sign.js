@@ -52,8 +52,14 @@ const bs58check_1 = __importDefault(require("bs58check"));
 // @ts-ignore - no types available
 const ripemd160 = __importStar(require("ripemd160"));
 // @bitgo/utxo-lib (VerusCoin fork)
-// @ts-ignore
-const utxolib = require('@bitgo/utxo-lib/dist/src');
+// Try local first, fall back to verusid-login copy
+let utxolib;
+try {
+    utxolib = require('@bitgo/utxo-lib/dist/src');
+}
+catch {
+    utxolib = require('/home/vap-av1/verusid-login/server/node_modules/@bitgo/utxo-lib/dist/src');
+}
 const { ECPair, IdentitySignature, networks } = utxolib;
 // Configure @noble/secp256k1 sync hash functions
 secp256k1.etc.hmacSha256Sync = (key, ...messages) => {
