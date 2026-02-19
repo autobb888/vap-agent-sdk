@@ -164,12 +164,18 @@ export function signChallenge(
   const chainIdDecoded = bs58check.decode(VRSCTEST_CHAIN_ID);
   const chainIdHash = chainIdDecoded.slice(1); // skip version byte
 
-  // Get identity hash from i-address
+  // Get identity hash from the signing identity
+  // For i-addresses: decode to get hash
+  // For identity names (name@): compute hash160 of lowercase name
   let identityHash: Uint8Array;
   if (identityAddress.startsWith('i')) {
     identityHash = iAddressToHash(identityAddress);
+  } else if (identityAddress.includes('@')) {
+    // Identity name - compute hash160 of lowercase name
+    const nameLower = identityAddress.toLowerCase();
+    identityHash = hash160(Buffer.from(nameLower, 'utf8'));
   } else {
-    // Fallback: for R-addresses, use chainIdHash (onboarding case)
+    // R-address fallback: use chainIdHash
     identityHash = chainIdHash;
   }
 
