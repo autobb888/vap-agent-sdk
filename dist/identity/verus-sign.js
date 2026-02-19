@@ -48,7 +48,10 @@ const crypto = __importStar(require("crypto"));
 const bs58check_1 = __importDefault(require("bs58check"));
 // @ts-ignore - VerusCoin fork
 const utxolib = __importStar(require("@bitgo/utxo-lib"));
-const { ECPair, IdentitySignature, networks } = utxolib;
+// Extract what we need from utxolib
+const ECPair = utxolib.ECPair;
+const IdentitySignature = utxolib.IdentitySignature;
+const networks = utxolib.networks;
 // Verus network constants
 const VERUS_NETWORK = {
     messagePrefix: 'Verus signed data:\n',
@@ -82,9 +85,9 @@ function wifToPrivateKey(wif) {
  * Get public key from private key
  */
 function privateKeyToPublicKey(privKey, compressed = true) {
-    // Use secp256k1 from utxolib
-    const keyPair = ECPair.fromPrivateKey(Buffer.from(privKey), { compressed });
-    return new Uint8Array(keyPair.publicKey);
+    const network = { ...VERUS_NETWORK, bip32: { public: 0x0488b21e, private: 0x0488ade4 } };
+    const keyPair = ECPair.fromWIF(bs58check_1.default.encode(Buffer.concat([Buffer.from([network.wif]), privKey, Buffer.from([0x01])])), network);
+    return new Uint8Array(keyPair.getPublicKeyBuffer());
 }
 /**
  * Hash160 (RIPEMD160(SHA256(data)))
@@ -127,6 +130,7 @@ function encodeVarInt(n) {
 function signMessage(wif, message, network = 'verustest') {
     const privKey = wifToPrivateKey(wif);
     const networkConfig = network === 'verustest' ? VERUS_NETWORK : VERUS_MAINNET;
+    const fullNetwork = { ...networkConfig, bip32: { public: 0x0488b21e, private: 0x0488ade4 } };
     const prefix = Buffer.from(networkConfig.messagePrefix, 'utf8');
     const msgBuf = Buffer.from(message, 'utf8');
     const lenBuf = encodeVarInt(msgBuf.length);
@@ -135,22 +139,10 @@ function signMessage(wif, message, network = 'verustest') {
         .update(crypto.createHash('sha256').update(fullMessage).digest())
         .digest();
     // Sign with utxolib
-    const keyPair = ECPair.fromPrivateKey(Buffer.from(privKey));
+    const keyPair = ECPair.fromWIF(wif, fullNetwork);
     const signature = keyPair.sign(msgHash);
-    // Get recovery ID
-    const pubkey = privateKeyToPublicKey(privKey, true);
-    const compressed = pubkey.length === 33;
-    const compactSig = Buffer.alloc(65);
-    // Find recovery ID
-    for (let recid = 0; recid < 4; recid++) {
-        try {
-            const sig = signature.toCompact(recid, compressed);
-            compactSig[0] = sig.readUInt8(0);
-            sig.copy(compactSig, 1, 1);
-            break;
-        }
-        catch { }
-    }
+    // Get compact signature with recovery ID
+    const compactSig = signature.toCompact(0, true);
     return compactSig.toString('base64');
 }
 /**
@@ -165,9 +157,7 @@ function signMessage(wif, message, network = 'verustest') {
  * @returns Base64-encoded CIdentitySignature
  */
 function signChallenge(wif, challenge, identityAddress, network = 'verustest') {
-    // Get ECPair from WIF for @bitgo/utxo-lib
     const networkObj = network === 'verustest' ? networks.verustest : networks.verus;
-    const keyPair = ECPair.fromWIF(wif, networkObj);
     // Determine signing identity
     // For onboarding with R-address, use null identity (chainID only)
     // For login/registration with identity, use the identity address
@@ -176,6 +166,8 @@ function signChallenge(wif, challenge, identityAddress, network = 'verustest') {
         // R-address — onboarding, use chainID as identity
         signingIdentity = null;
     }
+    // Get keyPair from WIF
+    const keyPair = ECPair.fromWIF(wif, networkObj);
     // Create IdentitySignature
     // version=2, hashType=5 (SHA256), blockHeight=0
     const idSig = new IdentitySignature(networkObj, 2, // version
