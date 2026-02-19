@@ -189,8 +189,23 @@ function signChallenge(wif, challenge, identityAddress, network = 'verustest') {
     // Already have chainIdHash
     // 3. blockHeight = 0 (4 bytes LE)
     const heightBuf = Buffer.alloc(4, 0);
-    // 4. identity hash — for onboarding, use chainIdHash (same as SDK does)
-    const identityHash = chainIdHash;
+    // 4. identity hash — derive from provided identityAddress
+    // For R-addresses (onboarding), use chainIdHash
+    // For i-addresses (login/registration), decode the i-address
+    let identityHash;
+    if (identityAddress.startsWith('R') || identityAddress.startsWith('V')) {
+        // R-address provided (onboarding) — use chainIdHash
+        identityHash = chainIdHash;
+    }
+    else if (identityAddress.startsWith('i')) {
+        // i-address provided (login/registration) — decode it
+        const decoded = bs58check_1.default.decode(identityAddress);
+        identityHash = decoded.slice(1); // skip version byte (0x66 for i-address)
+    }
+    else {
+        // Fallback to chainIdHash for unknown formats
+        identityHash = chainIdHash;
+    }
     // 5. SHA256(varint(msgLen) + lowercase(msg))
     const lowerMsg = Buffer.from(challenge.toLowerCase(), 'utf8');
     const msgSlice = Buffer.concat([encodeVarInt(lowerMsg.length), lowerMsg]);
