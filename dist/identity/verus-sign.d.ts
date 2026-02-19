@@ -1,21 +1,23 @@
 /**
  * Message signing for Verus agents.
- * Uses @bitgo/utxo-lib (VerusCoin fork) for proper CIdentitySignature support.
+ * Pure JS implementation matching Verus C++ source.
  */
 /**
  * Sign a message (legacy format compatible with verus verifymessage)
  */
 export declare function signMessage(wif: string, message: string, network?: 'verus' | 'verustest'): string;
 /**
- * Sign a challenge (CIdentitySignature format)
+ * Sign a challenge (CIdentitySignature format v2)
  *
- * Uses @bitgo/utxo-lib IdentitySignature for proper Verus compatibility.
+ * Matches Verus C++ IdentitySignature implementation:
+ * - version=2, hashType=5 (SHA256), blockHeight=0
+ * - Hash order: prefix + chainIdHash + blockHeight(LE) + identityHash + msgHash
  *
  * @param wif - Private key in WIF format
  * @param challenge - The message/challenge to sign
- * @param identityAddress - The VerusID (name@) or i-address signing
+ * @param identityAddress - The i-address (e.g., "iHDU1xtHvAUNHUGhjkGX5StUoSRGZNB7hA")
  * @param network - 'verus' or 'verustest'
- * @returns Base64-encoded CIdentitySignature
+ * @returns Base64-encoded CIdentitySignature (73 bytes serialized)
  */
 export declare function signChallenge(wif: string, challenge: string, identityAddress: string, network?: 'verus' | 'verustest'): string;
 /**
