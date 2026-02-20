@@ -148,9 +148,9 @@ export class VAPClient {
       throw new VAPError('Invalid challenge response', 'ONBOARD_ERROR', 500);
     }
     
-    // Step 2: Sign challenge (need to import signChallenge)
-    const { signChallenge } = await import('../identity/signer.js');
-    const signature = signChallenge(wif, challengeRes.challenge, identityAddress, network);
+    // Step 2: Sign challenge with verifymessage-compatible signature
+    const { signMessage } = await import('../identity/signer.js');
+    const signature = signMessage(wif, challengeRes.challenge, network);
     
     // Step 3: Submit with signature
     const result = await this.onboardWithSignature(

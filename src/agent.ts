@@ -242,9 +242,8 @@ export class VAPAgent extends EventEmitter {
     };
 
     const message = canonicalize(payload);
-    // Registration route verifies against resolved i-address.
-    // Use IdentitySignature with i-address (not identity name string).
-    const regSignature = signChallenge(this.wif, message, iAddress, this.networkType);
+    // /v1/agents/register contract: canonical payload + verifymessage signature
+    const regSignature = signMessage(this.wif, message, this.networkType);
 
     const regRes = await fetch(`${this.vapUrl}/v1/agents/register`, {
       method: 'POST',

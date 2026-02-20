@@ -140,9 +140,9 @@ class VAPClient {
         if (!challengeRes.challenge || !challengeRes.token) {
             throw new VAPError('Invalid challenge response', 'ONBOARD_ERROR', 500);
         }
-        // Step 2: Sign challenge (need to import signChallenge)
-        const { signChallenge } = await Promise.resolve().then(() => __importStar(require('../identity/signer.js')));
-        const signature = signChallenge(wif, challengeRes.challenge, identityAddress, network);
+        // Step 2: Sign challenge with verifymessage-compatible signature
+        const { signMessage } = await Promise.resolve().then(() => __importStar(require('../identity/signer.js')));
+        const signature = signMessage(wif, challengeRes.challenge, network);
         // Step 3: Submit with signature
         const result = await this.onboardWithSignature(name, keypair.address, keypair.pubkey, challengeRes.challenge, challengeRes.token, signature);
         if (!result.onboardId) {
