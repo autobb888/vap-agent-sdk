@@ -6,7 +6,7 @@
  * on the Verus Agent Platform — no Verus daemon required.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.privacyPremium = exports.recommendPrice = exports.estimateJobCost = exports.PLATFORM_FEE = exports.CATEGORY_MARKUPS = exports.SELF_HOSTED_COSTS = exports.API_COSTS = exports.IMAGE_COSTS = exports.LLM_COSTS = exports.verifyAttestationFormat = exports.signAttestation = exports.generateAttestationPayload = exports.PRIVACY_TIERS = exports.ChatClient = exports.getDefaultPolicy = exports.POLICY_LABELS = exports.protectSystemPrompt = exports.checkForCanaryLeak = exports.generateCanary = exports.wifToPubkey = exports.wifToAddress = exports.selectUtxos = exports.buildPayment = exports.signChallenge = exports.signMessage = exports.keypairFromWIF = exports.generateKeypair = exports.VAPError = exports.VAPClient = exports.VAPAgent = void 0;
+exports.finalizeOnboarding = exports.privacyPremium = exports.recommendPrice = exports.estimateJobCost = exports.PLATFORM_FEE = exports.CATEGORY_MARKUPS = exports.SELF_HOSTED_COSTS = exports.API_COSTS = exports.IMAGE_COSTS = exports.LLM_COSTS = exports.verifyAttestationFormat = exports.signAttestation = exports.generateAttestationPayload = exports.PRIVACY_TIERS = exports.ChatClient = exports.getDefaultPolicy = exports.POLICY_LABELS = exports.protectSystemPrompt = exports.checkForCanaryLeak = exports.generateCanary = exports.wifToPubkey = exports.wifToAddress = exports.selectUtxos = exports.buildPayment = exports.signChallenge = exports.signMessage = exports.keypairFromWIF = exports.generateKeypair = exports.VAPError = exports.VAPClient = exports.VAPAgent = void 0;
 // Core agent class
 var agent_js_1 = require("./agent.js");
 Object.defineProperty(exports, "VAPAgent", { enumerable: true, get: function () { return agent_js_1.VAPAgent; } });
@@ -60,4 +60,7 @@ var calculator_js_1 = require("./pricing/calculator.js");
 Object.defineProperty(exports, "estimateJobCost", { enumerable: true, get: function () { return calculator_js_1.estimateJobCost; } });
 Object.defineProperty(exports, "recommendPrice", { enumerable: true, get: function () { return calculator_js_1.recommendPrice; } });
 Object.defineProperty(exports, "privacyPremium", { enumerable: true, get: function () { return calculator_js_1.privacyPremium; } });
+// Onboarding finalization (idempotent, resumable)
+var finalize_js_1 = require("./onboarding/finalize.js");
+Object.defineProperty(exports, "finalizeOnboarding", { enumerable: true, get: function () { return finalize_js_1.finalizeOnboarding; } });
 //# sourceMappingURL=index.js.map

@@ -118,7 +118,9 @@ class VAPAgent extends node_events_1.EventEmitter {
         const token = challengeResp.token;
         // Onboarding: Use IdentitySignature format with R-address as identity
         // (the local verification expects this format, not legacy signMessage)
-        const signature = (0, signer_js_1.signChallenge)(this.wif, challenge, kp.address, network);
+        // Onboarding challenge uses R-address message verification path on server.
+        // Use legacy signMessage here; keep signChallenge for identity/i-address flows.
+        const signature = (0, signer_js_1.signMessage)(this.wif, challenge, network);
         console.log(`[VAP Agent] Challenge signed. Submitting registration...`);
         // Step 3: Submit with signature
         const result = await this.client.onboardWithSignature(name, kp.address, kp.pubkey, challenge, token, signature);

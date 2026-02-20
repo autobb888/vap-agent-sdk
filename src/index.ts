@@ -59,3 +59,14 @@ export {
   type RecommendPriceParams, type PricePoint, type PriceRecommendation,
   type AdditionalApiCost,
 } from './pricing/calculator.js';
+
+// Onboarding finalization (idempotent, resumable)
+export {
+  finalizeOnboarding,
+  type FinalizeMode,
+  type FinalizeStage,
+  type FinalizeState,
+  type FinalizeOnboardingParams,
+  type AgentProfileInput,
+  type ServiceInput,
+} from './onboarding/finalize.js';
