@@ -174,8 +174,12 @@ class VAPAgent extends node_events_1.EventEmitter {
      * @returns Registration result
      */
     async registerWithVAP(agentData) {
-        if (!this.wif || !this.keypair) {
+        if (!this.wif) {
             throw new Error('WIF key required for registration');
+        }
+        // Ensure keypair is derived when agent is instantiated from existing WIF
+        if (!this.keypair) {
+            this.keypair = (0, keypair_js_1.keypairFromWIF)(this.wif, this.networkType);
         }
         if (!this.identityName) {
             throw new Error('Identity name required (call register() first or set identityName)');
