@@ -49,10 +49,11 @@ secp256k1.hashes.hmacSha256 = (key: Uint8Array, ...msgs: Uint8Array[]) => {
  */
 function wifToPrivateKey(wif: string): Uint8Array {
   const decoded = bs58check.decode(wif);
-  // Standard WIF lengths:
-  // - 37 bytes: 1-byte version + 32-byte key + 4-byte checksum (uncompressed)
-  // - 38 bytes: 1-byte version + 32-byte key + 1-byte compression flag + 4-byte checksum
-  if (decoded.length === 38 || decoded.length === 37) {
+  // bs58check.decode() returns payload without checksum.
+  // Valid WIF payload lengths are:
+  // - 33 bytes: 1-byte version + 32-byte key (uncompressed)
+  // - 34 bytes: 1-byte version + 32-byte key + 0x01 (compressed)
+  if (decoded.length === 33 || decoded.length === 34) {
     return new Uint8Array(decoded.slice(1, 33));
   }
   throw new Error(`Invalid WIF length: ${decoded.length}`);
