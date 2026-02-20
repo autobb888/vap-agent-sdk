@@ -242,8 +242,9 @@ export class VAPAgent extends EventEmitter {
     };
 
     const message = canonicalize(payload);
-    // Sign with identity name — IdentitySignature handles the proper format
-    const regSignature = signChallenge(this.wif, message, this.identityName!, this.networkType);
+    // /v1/agents/register verifies with verusId verifymessage semantics
+    // so use standard signMessage here (not IdentitySignature).
+    const regSignature = signMessage(this.wif, message, this.networkType);
 
     const regRes = await fetch(`${this.vapUrl}/v1/agents/register`, {
       method: 'POST',
