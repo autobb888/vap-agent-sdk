@@ -6,7 +6,7 @@
  * on the Verus Agent Platform — no Verus daemon required.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.finalizeOnboarding = exports.privacyPremium = exports.recommendPrice = exports.estimateJobCost = exports.PLATFORM_FEE = exports.CATEGORY_MARKUPS = exports.SELF_HOSTED_COSTS = exports.API_COSTS = exports.IMAGE_COSTS = exports.LLM_COSTS = exports.verifyAttestationFormat = exports.signAttestation = exports.generateAttestationPayload = exports.PRIVACY_TIERS = exports.ChatClient = exports.getDefaultPolicy = exports.POLICY_LABELS = exports.protectSystemPrompt = exports.checkForCanaryLeak = exports.generateCanary = exports.wifToPubkey = exports.wifToAddress = exports.selectUtxos = exports.buildPayment = exports.signChallenge = exports.signMessage = exports.keypairFromWIF = exports.generateKeypair = exports.VAPError = exports.VAPClient = exports.VAPAgent = void 0;
+exports.buildUpdateIdentityCommand = exports.buildUpdateIdentityPayload = exports.buildAgentContentMultimap = exports.getCanonicalVdxfDefinitionCount = exports.VDXF_KEYS = exports.finalizeOnboarding = exports.privacyPremium = exports.recommendPrice = exports.estimateJobCost = exports.PLATFORM_FEE = exports.CATEGORY_MARKUPS = exports.SELF_HOSTED_COSTS = exports.API_COSTS = exports.IMAGE_COSTS = exports.LLM_COSTS = exports.verifyAttestationFormat = exports.signAttestation = exports.generateAttestationPayload = exports.PRIVACY_TIERS = exports.ChatClient = exports.getDefaultPolicy = exports.POLICY_LABELS = exports.protectSystemPrompt = exports.checkForCanaryLeak = exports.generateCanary = exports.wifToPubkey = exports.wifToAddress = exports.selectUtxos = exports.buildPayment = exports.signChallenge = exports.signMessage = exports.keypairFromWIF = exports.generateKeypair = exports.VAPError = exports.VAPClient = exports.VAPAgent = void 0;
 // Core agent class
 var agent_js_1 = require("./agent.js");
 Object.defineProperty(exports, "VAPAgent", { enumerable: true, get: function () { return agent_js_1.VAPAgent; } });
@@ -63,4 +63,10 @@ Object.defineProperty(exports, "privacyPremium", { enumerable: true, get: functi
 // Onboarding finalization (idempotent, resumable)
 var finalize_js_1 = require("./onboarding/finalize.js");
 Object.defineProperty(exports, "finalizeOnboarding", { enumerable: true, get: function () { return finalize_js_1.finalizeOnboarding; } });
+var vdxf_js_1 = require("./onboarding/vdxf.js");
+Object.defineProperty(exports, "VDXF_KEYS", { enumerable: true, get: function () { return vdxf_js_1.VDXF_KEYS; } });
+Object.defineProperty(exports, "getCanonicalVdxfDefinitionCount", { enumerable: true, get: function () { return vdxf_js_1.getCanonicalVdxfDefinitionCount; } });
+Object.defineProperty(exports, "buildAgentContentMultimap", { enumerable: true, get: function () { return vdxf_js_1.buildAgentContentMultimap; } });
+Object.defineProperty(exports, "buildUpdateIdentityPayload", { enumerable: true, get: function () { return vdxf_js_1.buildUpdateIdentityPayload; } });
+Object.defineProperty(exports, "buildUpdateIdentityCommand", { enumerable: true, get: function () { return vdxf_js_1.buildUpdateIdentityCommand; } });
 //# sourceMappingURL=index.js.map

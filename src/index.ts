@@ -70,3 +70,11 @@ export {
   type AgentProfileInput,
   type ServiceInput,
 } from './onboarding/finalize.js';
+
+export {
+  VDXF_KEYS,
+  getCanonicalVdxfDefinitionCount,
+  buildAgentContentMultimap,
+  buildUpdateIdentityPayload,
+  buildUpdateIdentityCommand,
+} from './onboarding/vdxf.js';
