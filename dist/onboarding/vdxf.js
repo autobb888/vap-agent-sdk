@@ -2,7 +2,11 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.VDXF_KEYS = void 0;
 exports.getCanonicalVdxfDefinitionCount = getCanonicalVdxfDefinitionCount;
+exports.encodeVdxfValue = encodeVdxfValue;
+exports.decodeVdxfValue = decodeVdxfValue;
 exports.buildAgentContentMultimap = buildAgentContentMultimap;
+exports.buildCanonicalAgentUpdate = buildCanonicalAgentUpdate;
+exports.verifyPublishedIdentity = verifyPublishedIdentity;
 exports.buildUpdateIdentityPayload = buildUpdateIdentityPayload;
 exports.buildUpdateIdentityCommand = buildUpdateIdentityCommand;
 exports.VDXF_KEYS = {
@@ -47,6 +51,14 @@ function getCanonicalVdxfDefinitionCount() {
 function encodeVdxfValue(value) {
     return Buffer.from(JSON.stringify(value), 'utf8').toString('hex');
 }
+function decodeVdxfValue(hex) {
+    try {
+        return JSON.parse(Buffer.from(hex, 'hex').toString('utf8'));
+    }
+    catch {
+        return Buffer.from(hex, 'hex').toString('utf8');
+    }
+}
 function buildAgentContentMultimap(profile, services = []) {
     const contentmultimap = {};
     if (profile) {
@@ -68,6 +80,75 @@ function buildAgentContentMultimap(profile, services = []) {
         }));
     }
     return contentmultimap;
+}
+function buildCanonicalAgentUpdate(params) {
+    const { fullName, parent, primaryaddresses, minimumsignatures = 1, vdxfKeys, fields = {}, } = params;
+    const clean = (fullName || '').replace(/@$/, '');
+    const inferredName = clean ? clean.split('.')[0] : '';
+    const inferredParent = clean.includes('.') ? clean.split('.').slice(1).join('.') : parent;
+    if (!inferredName)
+        throw new Error('Missing subID name');
+    if (!inferredParent)
+        throw new Error('Missing parent');
+    if (!Array.isArray(primaryaddresses) || primaryaddresses.length === 0) {
+        throw new Error('primaryaddresses required');
+    }
+    const contentmultimap = {};
+    for (const [field, value] of Object.entries(fields)) {
+        if (value == null)
+            continue;
+        if (typeof value === 'string' && value.trim() === '')
+            continue;
+        if (Array.isArray(value) && value.length === 0)
+            continue;
+        const key = vdxfKeys[field];
+        if (!key)
+            continue;
+        if (field === 'services' && Array.isArray(value)) {
+            const encoded = value
+                .filter((svc) => svc && typeof svc === 'object' && Object.keys(svc).length > 0)
+                .map((svc) => encodeVdxfValue(svc));
+            if (encoded.length > 0) {
+                contentmultimap[key] = encoded;
+            }
+        }
+        else {
+            contentmultimap[key] = [encodeVdxfValue(value)];
+        }
+    }
+    return {
+        name: inferredName,
+        parent: inferredParent,
+        primaryaddresses,
+        minimumsignatures,
+        contentmultimap,
+    };
+}
+function verifyPublishedIdentity(params) {
+    const { identity, expectedPayload } = params;
+    const errors = [];
+    if (identity.name !== expectedPayload.name)
+        errors.push('name mismatch');
+    if (identity.parent !== expectedPayload.parent)
+        errors.push('parent mismatch');
+    const expectedCmm = (expectedPayload.contentmultimap || {});
+    const onchain = identity.contentmultimap || {};
+    for (const [key, value] of Object.entries(expectedCmm)) {
+        if (!onchain[key] || onchain[key].length === 0) {
+            errors.push(`missing key ${key}`);
+            continue;
+        }
+        const expectedFirst = Array.isArray(value) ? value[0] : undefined;
+        const actualFirst = onchain[key][0];
+        if (expectedFirst && actualFirst !== expectedFirst) {
+            const e = decodeVdxfValue(expectedFirst);
+            const a = decodeVdxfValue(actualFirst);
+            if (JSON.stringify(e) !== JSON.stringify(a)) {
+                errors.push(`value mismatch on ${key}`);
+            }
+        }
+    }
+    return { ok: errors.length === 0, errors };
 }
 function buildUpdateIdentityPayload(identityName, contentmultimap) {
     const clean = identityName.replace(/@$/, '');

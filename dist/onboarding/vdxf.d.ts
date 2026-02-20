@@ -36,7 +36,30 @@ export declare const VDXF_KEYS: {
     };
 };
 export declare function getCanonicalVdxfDefinitionCount(): number;
+export declare function encodeVdxfValue(value: unknown): string;
+export declare function decodeVdxfValue(hex: string): unknown;
 export declare function buildAgentContentMultimap(profile?: AgentProfileInput, services?: ServiceInput[]): Record<string, string[]>;
+export interface CanonicalAgentUpdateParams {
+    fullName?: string;
+    parent?: string;
+    primaryaddresses: string[];
+    minimumsignatures?: number;
+    vdxfKeys: Record<string, string>;
+    fields?: Record<string, unknown>;
+}
+export interface CanonicalIdentitySnapshot {
+    name?: string;
+    parent?: string;
+    contentmultimap?: Record<string, string[]>;
+}
+export declare function buildCanonicalAgentUpdate(params: CanonicalAgentUpdateParams): Record<string, unknown>;
+export declare function verifyPublishedIdentity(params: {
+    identity: CanonicalIdentitySnapshot;
+    expectedPayload: Record<string, unknown>;
+}): {
+    ok: boolean;
+    errors: string[];
+};
 export declare function buildUpdateIdentityPayload(identityName: string, contentmultimap: Record<string, string[]>): Record<string, unknown>;
 export declare function buildUpdateIdentityCommand(payload: Record<string, unknown>, chain?: 'verustest' | 'verus'): string;
 //# sourceMappingURL=vdxf.d.ts.map

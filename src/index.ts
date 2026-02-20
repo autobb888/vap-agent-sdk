@@ -74,7 +74,13 @@ export {
 export {
   VDXF_KEYS,
   getCanonicalVdxfDefinitionCount,
+  encodeVdxfValue,
+  decodeVdxfValue,
   buildAgentContentMultimap,
+  buildCanonicalAgentUpdate,
+  verifyPublishedIdentity,
   buildUpdateIdentityPayload,
   buildUpdateIdentityCommand,
+  type CanonicalAgentUpdateParams,
+  type CanonicalIdentitySnapshot,
 } from './onboarding/vdxf.js';
