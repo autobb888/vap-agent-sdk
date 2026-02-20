@@ -57,14 +57,13 @@ const IdentitySignature = utxolib.IdentitySignature;
 const networks = utxolib.networks;
 // Verus network constants
 const VERUS_NETWORK = {
-    // IMPORTANT: include leading 0x15 byte to match daemon signmessage/verifymessage.
-    messagePrefix: '\x15Verus signed data:\n',
+    messagePrefix: 'Verus signed data:\n',
     pubKeyHash: 0x3c,
     scriptHash: 0x3b,
     wif: 0xbc,
 };
 const VERUS_MAINNET = {
-    messagePrefix: '\x15Verus signed data:\n',
+    messagePrefix: 'Verus signed data:\n',
     pubKeyHash: 0x3b,
     scriptHash: 0x3c,
     wif: 0x80,
