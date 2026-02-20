@@ -5,6 +5,9 @@
 
 import * as crypto from 'crypto';
 import bs58check from 'bs58check';
+import * as secp256k1 from '@noble/secp256k1';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { hmac } from '@noble/hashes/hmac.js';
 
 // @ts-ignore - VerusCoin fork
 import * as utxolib from '@bitgo/utxo-lib';
@@ -27,6 +30,18 @@ const VERUS_MAINNET = {
   pubKeyHash: 0x3b,
   scriptHash: 0x3c,
   wif: 0x80,
+};
+
+// Configure noble secp256k1 hash functions
+secp256k1.hashes.sha256 = (...msgs: Uint8Array[]) => {
+  const hasher = sha256.create();
+  for (const msg of msgs) hasher.update(msg);
+  return hasher.digest();
+};
+secp256k1.hashes.hmacSha256 = (key: Uint8Array, ...msgs: Uint8Array[]) => {
+  const hasher = hmac.create(sha256, key);
+  for (const msg of msgs) hasher.update(msg);
+  return hasher.digest();
 };
 
 /**
@@ -100,25 +115,35 @@ export function signMessage(
 ): string {
   const privKey = wifToPrivateKey(wif);
   const networkConfig = network === 'verustest' ? VERUS_NETWORK : VERUS_MAINNET;
-  const fullNetwork = { ...networkConfig, bip32: { public: 0x0488b21e, private: 0x0488ade4 } };
 
+  // Verus/Bitcoin message hash:
+  // SHA256(SHA256(varint(prefixLen)+prefix+varint(msgLen)+msg))
   const prefix = Buffer.from(networkConfig.messagePrefix, 'utf8');
   const msgBuf = Buffer.from(message, 'utf8');
-  const lenBuf = encodeVarInt(msgBuf.length);
-  const fullMessage = Buffer.concat([prefix, lenBuf, msgBuf]);
+  const fullMessage = Buffer.concat([
+    encodeVarInt(prefix.length),
+    prefix,
+    encodeVarInt(msgBuf.length),
+    msgBuf,
+  ]);
 
   const msgHash = crypto.createHash('sha256')
     .update(crypto.createHash('sha256').update(fullMessage).digest())
     .digest();
 
-  // Sign with utxolib
-  const keyPair = ECPair.fromWIF(wif, fullNetwork);
-  const signature = keyPair.sign(msgHash);
-  
-  // Get compact signature with recovery ID
-  const compactSig = signature.toCompact(0, true);
+  // Create recoverable compact signature (65 bytes: [recid(0-3), r(32), s(32)])
+  const recoveredSig = secp256k1.sign(msgHash, privKey, {
+    prehash: false,
+    format: 'recovered',
+  }) as Uint8Array;
 
-  return compactSig.toString('base64');
+  // Convert to Bitcoin/Verus compact format: header = 27 + recid + (compressed ? 4 : 0)
+  const recid = recoveredSig[0];
+  const compact = Buffer.alloc(65);
+  compact[0] = 27 + recid + 4; // compressed=true
+  Buffer.from(recoveredSig.slice(1)).copy(compact, 1);
+
+  return compact.toString('base64');
 }
 
 /**
