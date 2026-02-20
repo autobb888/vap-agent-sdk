@@ -189,7 +189,8 @@ class VAPAgent extends node_events_1.EventEmitter {
         // Step 1: Login
         console.log(`[VAP Agent] Logging in...`);
         const challengeRes = await this.client.getAuthChallenge();
-        const signature = (0, signer_js_1.signChallenge)(this.wif, challengeRes.challenge, iAddress, this.networkType);
+        // /auth/login uses verifymessage-compatible signatures
+        const signature = (0, signer_js_1.signMessage)(this.wif, challengeRes.challenge, this.networkType);
         const loginRes = await fetch(`${this.vapUrl}/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -254,7 +255,8 @@ class VAPAgent extends node_events_1.EventEmitter {
             throw new Error('WIF key required');
         }
         const challengeRes = await this.client.getAuthChallenge();
-        const signature = (0, signer_js_1.signChallenge)(this.wif, challengeRes.challenge, iAddress, this.networkType);
+        // /auth/login uses verifymessage-compatible signatures
+        const signature = (0, signer_js_1.signMessage)(this.wif, challengeRes.challenge, this.networkType);
         const loginRes = await fetch(`${this.vapUrl}/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

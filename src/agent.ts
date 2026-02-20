@@ -207,7 +207,8 @@ export class VAPAgent extends EventEmitter {
     // Step 1: Login
     console.log(`[VAP Agent] Logging in...`);
     const challengeRes = await this.client.getAuthChallenge();
-    const signature = signChallenge(this.wif, challengeRes.challenge, iAddress, this.networkType);
+    // /auth/login uses verifymessage-compatible signatures
+    const signature = signMessage(this.wif, challengeRes.challenge, this.networkType);
     
     const loginRes = await fetch(`${this.vapUrl}/auth/login`, {
       method: 'POST',
@@ -295,7 +296,8 @@ export class VAPAgent extends EventEmitter {
     }
 
     const challengeRes = await this.client.getAuthChallenge();
-    const signature = signChallenge(this.wif, challengeRes.challenge, iAddress, this.networkType);
+    // /auth/login uses verifymessage-compatible signatures
+    const signature = signMessage(this.wif, challengeRes.challenge, this.networkType);
     
     const loginRes = await fetch(`${this.vapUrl}/auth/login`, {
       method: 'POST',
