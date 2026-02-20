@@ -116,12 +116,12 @@ export function signMessage(
   const privKey = wifToPrivateKey(wif);
   const networkConfig = network === 'verustest' ? VERUS_NETWORK : VERUS_MAINNET;
 
-  // Verus/Bitcoin message hash:
-  // SHA256(SHA256(varint(prefixLen)+prefix+varint(msgLen)+msg))
+  // Verus/Bitcoin message hash (bitcoinjs-message compatible):
+  // SHA256(SHA256(prefix + varint(msgLen) + msg))
+  // NOTE: prefix already contains leading control byte (e.g. \x15Verus signed data:\n)
   const prefix = Buffer.from(networkConfig.messagePrefix, 'utf8');
   const msgBuf = Buffer.from(message, 'utf8');
   const fullMessage = Buffer.concat([
-    encodeVarInt(prefix.length),
     prefix,
     encodeVarInt(msgBuf.length),
     msgBuf,
