@@ -49,6 +49,7 @@ const bs58check_1 = __importDefault(require("bs58check"));
 const secp256k1 = __importStar(require("@noble/secp256k1"));
 const sha2_js_1 = require("@noble/hashes/sha2.js");
 const hmac_js_1 = require("@noble/hashes/hmac.js");
+const bitcoinMessage = __importStar(require("bitcoinjs-message"));
 // @ts-ignore - VerusCoin fork
 const utxolib = __importStar(require("@bitgo/utxo-lib"));
 // Extract what we need from utxolib
@@ -57,13 +58,14 @@ const IdentitySignature = utxolib.IdentitySignature;
 const networks = utxolib.networks;
 // Verus network constants
 const VERUS_NETWORK = {
-    messagePrefix: 'Verus signed data:\n',
+    // bitcoinjs-message style prefix includes leading compact-size byte
+    messagePrefix: '\x15Verus signed data:\n',
     pubKeyHash: 0x3c,
     scriptHash: 0x3b,
     wif: 0xbc,
 };
 const VERUS_MAINNET = {
-    messagePrefix: 'Verus signed data:\n',
+    messagePrefix: '\x15Verus signed data:\n',
     pubKeyHash: 0x3b,
     scriptHash: 0x3c,
     wif: 0x80,
@@ -84,16 +86,22 @@ secp256k1.hashes.hmacSha256 = (key, ...msgs) => {
 /**
  * Decode WIF to private key
  */
-function wifToPrivateKey(wif) {
+function decodeWif(wif) {
     const decoded = bs58check_1.default.decode(wif);
     // bs58check.decode() returns payload without checksum.
     // Valid WIF payload lengths are:
     // - 33 bytes: 1-byte version + 32-byte key (uncompressed)
     // - 34 bytes: 1-byte version + 32-byte key + 0x01 (compressed)
     if (decoded.length === 33 || decoded.length === 34) {
-        return new Uint8Array(decoded.slice(1, 33));
+        return {
+            privateKey: new Uint8Array(decoded.slice(1, 33)),
+            compressed: decoded.length === 34,
+        };
     }
     throw new Error(`Invalid WIF length: ${decoded.length}`);
+}
+function wifToPrivateKey(wif) {
+    return decodeWif(wif).privateKey;
 }
 /**
  * Get public key from private key
@@ -142,33 +150,11 @@ function encodeVarInt(n) {
  * Sign a message (legacy format compatible with verus verifymessage)
  */
 function signMessage(wif, message, network = 'verustest') {
-    const networkObj = network === 'verustest' ? networks.verustest : networks.verus;
     const networkConfig = network === 'verustest' ? VERUS_NETWORK : VERUS_MAINNET;
-    // Canonical Bitcoin/Verus signed-message hash:
-    // SHA256(SHA256(varint(prefixLen)+prefix+varint(msgLen)+msg))
-    // where prefix includes the leading control byte (\x15 for Verus)
-    const prefix = Buffer.from(networkConfig.messagePrefix, 'utf8');
-    const msgBuf = Buffer.from(message, 'utf8');
-    const fullMessage = Buffer.concat([
-        encodeVarInt(prefix.length),
-        prefix,
-        encodeVarInt(msgBuf.length),
-        msgBuf,
-    ]);
-    const msgHash = crypto.createHash('sha256')
-        .update(crypto.createHash('sha256').update(fullMessage).digest())
-        .digest();
-    // Use noble recoverable signature to get deterministic recovery id directly
-    const recoveredSig = secp256k1.sign(msgHash, wifToPrivateKey(wif), {
-        prehash: false,
-        format: 'recovered',
-    });
-    // Convert to Bitcoin/Verus compact format: header = 27 + recid + (compressed ? 4 : 0)
-    const recid = recoveredSig[0];
-    const compact = Buffer.alloc(65);
-    compact[0] = 27 + recid + 4;
-    Buffer.from(recoveredSig.slice(1)).copy(compact, 1);
-    return compact.toString('base64');
+    const { privateKey, compressed } = decodeWif(wif);
+    // Use bitcoinjs-message implementation (same magic-hash/signature format used by BitGoJS/verifymessage)
+    const sig = bitcoinMessage.sign(message, Buffer.from(privateKey), compressed, networkConfig.messagePrefix);
+    return Buffer.from(sig).toString('base64');
 }
 /**
  * Sign a challenge (CIdentitySignature format)
