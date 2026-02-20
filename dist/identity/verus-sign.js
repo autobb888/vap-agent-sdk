@@ -142,14 +142,15 @@ function encodeVarInt(n) {
  * Sign a message (legacy format compatible with verus verifymessage)
  */
 function signMessage(wif, message, network = 'verustest') {
-    const privKey = wifToPrivateKey(wif);
+    const networkObj = network === 'verustest' ? networks.verustest : networks.verus;
     const networkConfig = network === 'verustest' ? VERUS_NETWORK : VERUS_MAINNET;
-    // Verus/Bitcoin message hash (bitcoinjs-message compatible):
-    // SHA256(SHA256(prefix + varint(msgLen) + msg))
-    // NOTE: prefix already contains leading control byte (e.g. \x15Verus signed data:\n)
+    // Canonical Bitcoin/Verus signed-message hash:
+    // SHA256(SHA256(varint(prefixLen)+prefix+varint(msgLen)+msg))
+    // where prefix includes the leading control byte (\x15 for Verus)
     const prefix = Buffer.from(networkConfig.messagePrefix, 'utf8');
     const msgBuf = Buffer.from(message, 'utf8');
     const fullMessage = Buffer.concat([
+        encodeVarInt(prefix.length),
         prefix,
         encodeVarInt(msgBuf.length),
         msgBuf,
@@ -157,16 +158,31 @@ function signMessage(wif, message, network = 'verustest') {
     const msgHash = crypto.createHash('sha256')
         .update(crypto.createHash('sha256').update(fullMessage).digest())
         .digest();
-    // Create recoverable compact signature (65 bytes: [recid(0-3), r(32), s(32)])
-    const recoveredSig = secp256k1.sign(msgHash, privKey, {
-        prehash: false,
-        format: 'recovered',
-    });
+    const keyPair = ECPair.fromWIF(wif, networkObj);
+    const sigObj = keyPair.sign(msgHash);
+    const compact = sigObj.toCompact(); // 65 bytes [recid,r,s] with placeholder recid
+    // Find correct recovery id by matching recovered pubkey to signer pubkey
+    const expectedPubkey = keyPair.getPublicKeyBuffer();
+    let foundRecid = -1;
+    for (let recid = 0; recid < 4; recid++) {
+        const recoveredSig = Buffer.from(compact);
+        recoveredSig[0] = recid;
+        try {
+            const recoveredPub = secp256k1.recoverPublicKey(recoveredSig, msgHash);
+            if (Buffer.from(recoveredPub).equals(expectedPubkey)) {
+                foundRecid = recid;
+                break;
+            }
+        }
+        catch {
+            // continue
+        }
+    }
+    if (foundRecid < 0) {
+        throw new Error('Could not determine recovery ID for message signature');
+    }
     // Convert to Bitcoin/Verus compact format: header = 27 + recid + (compressed ? 4 : 0)
-    const recid = recoveredSig[0];
-    const compact = Buffer.alloc(65);
-    compact[0] = 27 + recid + 4; // compressed=true
-    Buffer.from(recoveredSig.slice(1)).copy(compact, 1);
+    compact[0] = 27 + foundRecid + 4;
     return compact.toString('base64');
 }
 /**
