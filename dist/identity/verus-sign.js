@@ -46,6 +46,9 @@ exports.keypairFromWIF = keypairFromWIF;
 exports.generateKeypair = generateKeypair;
 const crypto = __importStar(require("crypto"));
 const bs58check_1 = __importDefault(require("bs58check"));
+const secp256k1 = __importStar(require("@noble/secp256k1"));
+const sha2_js_1 = require("@noble/hashes/sha2.js");
+const hmac_js_1 = require("@noble/hashes/hmac.js");
 // @ts-ignore - VerusCoin fork
 const utxolib = __importStar(require("@bitgo/utxo-lib"));
 // Extract what we need from utxolib
@@ -65,18 +68,28 @@ const VERUS_MAINNET = {
     scriptHash: 0x3c,
     wif: 0x80,
 };
+// Configure noble secp256k1 hash functions
+secp256k1.hashes.sha256 = (...msgs) => {
+    const hasher = sha2_js_1.sha256.create();
+    for (const msg of msgs)
+        hasher.update(msg);
+    return hasher.digest();
+};
+secp256k1.hashes.hmacSha256 = (key, ...msgs) => {
+    const hasher = hmac_js_1.hmac.create(sha2_js_1.sha256, key);
+    for (const msg of msgs)
+        hasher.update(msg);
+    return hasher.digest();
+};
 /**
  * Decode WIF to private key
  */
 function wifToPrivateKey(wif) {
     const decoded = bs58check_1.default.decode(wif);
-    if (decoded.length === 38) {
-        return new Uint8Array(decoded.slice(1, 33));
-    }
-    else if (decoded.length === 37) {
-        return new Uint8Array(decoded.slice(1, 33));
-    }
-    else if (decoded.length === 34) {
+    // Standard WIF lengths:
+    // - 37 bytes: 1-byte version + 32-byte key + 4-byte checksum (uncompressed)
+    // - 38 bytes: 1-byte version + 32-byte key + 1-byte compression flag + 4-byte checksum
+    if (decoded.length === 38 || decoded.length === 37) {
         return new Uint8Array(decoded.slice(1, 33));
     }
     throw new Error(`Invalid WIF length: ${decoded.length}`);
@@ -130,20 +143,30 @@ function encodeVarInt(n) {
 function signMessage(wif, message, network = 'verustest') {
     const privKey = wifToPrivateKey(wif);
     const networkConfig = network === 'verustest' ? VERUS_NETWORK : VERUS_MAINNET;
-    const fullNetwork = { ...networkConfig, bip32: { public: 0x0488b21e, private: 0x0488ade4 } };
+    // Verus/Bitcoin message hash:
+    // SHA256(SHA256(varint(prefixLen)+prefix+varint(msgLen)+msg))
     const prefix = Buffer.from(networkConfig.messagePrefix, 'utf8');
     const msgBuf = Buffer.from(message, 'utf8');
-    const lenBuf = encodeVarInt(msgBuf.length);
-    const fullMessage = Buffer.concat([prefix, lenBuf, msgBuf]);
+    const fullMessage = Buffer.concat([
+        encodeVarInt(prefix.length),
+        prefix,
+        encodeVarInt(msgBuf.length),
+        msgBuf,
+    ]);
     const msgHash = crypto.createHash('sha256')
         .update(crypto.createHash('sha256').update(fullMessage).digest())
         .digest();
-    // Sign with utxolib
-    const keyPair = ECPair.fromWIF(wif, fullNetwork);
-    const signature = keyPair.sign(msgHash);
-    // Get compact signature with recovery ID
-    const compactSig = signature.toCompact(0, true);
-    return compactSig.toString('base64');
+    // Create recoverable compact signature (65 bytes: [recid(0-3), r(32), s(32)])
+    const recoveredSig = secp256k1.sign(msgHash, privKey, {
+        prehash: false,
+        format: 'recovered',
+    });
+    // Convert to Bitcoin/Verus compact format: header = 27 + recid + (compressed ? 4 : 0)
+    const recid = recoveredSig[0];
+    const compact = Buffer.alloc(65);
+    compact[0] = 27 + recid + 4; // compressed=true
+    Buffer.from(recoveredSig.slice(1)).copy(compact, 1);
+    return compact.toString('base64');
 }
 /**
  * Sign a challenge (CIdentitySignature format)
@@ -174,7 +197,6 @@ function signChallenge(wif, challenge, identityAddress, network = 'verustest') {
     }
     catch (err) {
         console.error('[signChallenge] ECPair.fromWIF failed:', err.message);
-        console.error('[signChallenge] WIF:', wif.slice(0, 10) + '...');
         console.error('[signChallenge] Network:', network);
         throw err;
     }

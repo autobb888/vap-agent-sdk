@@ -49,11 +49,10 @@ secp256k1.hashes.hmacSha256 = (key: Uint8Array, ...msgs: Uint8Array[]) => {
  */
 function wifToPrivateKey(wif: string): Uint8Array {
   const decoded = bs58check.decode(wif);
-  if (decoded.length === 38) {
-    return new Uint8Array(decoded.slice(1, 33));
-  } else if (decoded.length === 37) {
-    return new Uint8Array(decoded.slice(1, 33));
-  } else if (decoded.length === 34) {
+  // Standard WIF lengths:
+  // - 37 bytes: 1-byte version + 32-byte key + 4-byte checksum (uncompressed)
+  // - 38 bytes: 1-byte version + 32-byte key + 1-byte compression flag + 4-byte checksum
+  if (decoded.length === 38 || decoded.length === 37) {
     return new Uint8Array(decoded.slice(1, 33));
   }
   throw new Error(`Invalid WIF length: ${decoded.length}`);
@@ -181,7 +180,6 @@ export function signChallenge(
     keyPair = ECPair.fromWIF(wif, networkObj);
   } catch (err: any) {
     console.error('[signChallenge] ECPair.fromWIF failed:', err.message);
-    console.error('[signChallenge] WIF:', wif.slice(0, 10) + '...');
     console.error('[signChallenge] Network:', network);
     throw err;
   }
