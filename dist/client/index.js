@@ -53,6 +53,9 @@ class VAPClient {
     getSessionToken() {
         return this.sessionToken;
     }
+    getBaseUrl() {
+        return this.baseUrl;
+    }
     async request(method, path, body) {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), this.timeout);
@@ -74,7 +77,7 @@ class VAPClient {
             });
             const data = await response.json();
             if (!response.ok) {
-                const error = data?.error || {};
+                const error = (data?.error ?? {});
                 throw new VAPError(error.message || `HTTP ${response.status}`, error.code || 'HTTP_ERROR', response.status);
             }
             return data;
@@ -89,7 +92,13 @@ class VAPClient {
     /** Get authentication challenge for login */
     async getAuthChallenge() {
         const response = await fetch(`${this.baseUrl}/auth/challenge`);
-        const data = await response.json();
+        let data;
+        try {
+            data = await response.json();
+        }
+        catch {
+            throw new VAPError('Invalid JSON in auth challenge response', 'PARSE_ERROR', response.status);
+        }
         return data.data;
     }
     // ------------------------------------------

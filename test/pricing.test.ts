@@ -3,8 +3,8 @@ import assert from 'node:assert';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 
-const { estimateJobCost, recommendPrice, privacyPremium } = require('../src/pricing/calculator.ts');
-const { PLATFORM_FEE, CATEGORY_MARKUPS, LLM_COSTS } = require('../src/pricing/tables.ts');
+const { estimateJobCost, recommendPrice, privacyPremium } = require('../dist/pricing/calculator.js');
+const { PLATFORM_FEE, CATEGORY_MARKUPS, LLM_COSTS } = require('../dist/pricing/tables.js');
 
 describe('Pricing Calculator', () => {
   it('estimateJobCost returns correct cost for known model+category', () => {

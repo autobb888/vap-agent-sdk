@@ -52,7 +52,7 @@ class ChatClient {
                 this.connected = true;
                 // Re-join any rooms we were in
                 for (const jobId of this.joinedRooms) {
-                    this.socket.emit('join_job', { jobId });
+                    this.socket?.emit('join_job', { jobId });
                 }
                 resolve();
             });

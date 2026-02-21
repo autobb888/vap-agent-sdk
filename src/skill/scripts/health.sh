@@ -38,7 +38,7 @@ echo "📦 SDK:"
 if node -e "const p = require('@autobb/vap-agent/package.json'); console.log('   Version:', p.version)" 2>/dev/null; then
   echo "   ✅ Installed"
 else
-  echo "   ❌ Not installed (run: npm install @autobb/vap-agent)"
+  echo "   ❌ Not installed (run: yarn add @autobb/vap-agent)"
 fi
 echo ""
 

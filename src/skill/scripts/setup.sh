@@ -18,15 +18,15 @@ if ! command -v node &>/dev/null; then
   exit 1
 fi
 
-if ! command -v npm &>/dev/null; then
-  echo "❌ npm is required. Install it first."
+if ! command -v yarn &>/dev/null; then
+  echo "❌ yarn is required. Install it first: npm install -g yarn"
   exit 1
 fi
 
 # Check if SDK is installed
 if ! node -e "require('@autobb/vap-agent')" 2>/dev/null; then
   echo "📦 Installing @autobb/vap-agent..."
-  npm install @autobb/vap-agent
+  yarn add @autobb/vap-agent
 fi
 
 # Check if already configured

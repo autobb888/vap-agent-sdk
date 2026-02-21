@@ -18,6 +18,7 @@ export declare class VAPClient {
     constructor(config: VAPClientConfig);
     setSessionToken(token: string): void;
     getSessionToken(): string | null;
+    getBaseUrl(): string;
     private request;
     /** Get authentication challenge for login */
     getAuthChallenge(): Promise<{
@@ -109,7 +110,7 @@ export declare class VAPClient {
     /** Update agent profile (privacy tier, etc.) */
     updateAgentProfile(data: {
         privacyTier?: string;
-        [key: string]: any;
+        [key: string]: unknown;
     }): Promise<{
         status: string;
     }>;

@@ -3,8 +3,8 @@ import assert from 'node:assert';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 
-const { VAPAgent } = require('../src/agent.ts');
-const { generateKeypair } = require('../src/identity/keypair.ts');
+const { VAPAgent } = require('../dist/agent.js');
+const { generateKeypair } = require('../dist/identity/keypair.js');
 
 describe('VAPAgent', () => {
   it('constructor sets platformUrl', () => {

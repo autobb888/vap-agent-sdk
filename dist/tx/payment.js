@@ -11,6 +11,7 @@ exports.selectUtxos = selectUtxos;
 exports.buildPayment = buildPayment;
 exports.wifToAddress = wifToAddress;
 exports.wifToPubkey = wifToPubkey;
+const keypair_js_1 = require("../identity/keypair.js");
 function selectUtxos(utxos, targetAmount) {
     throw new Error('selectUtxos: Not implemented without @bitgo/utxo-lib');
 }
@@ -18,12 +19,9 @@ function buildPayment(params) {
     throw new Error('buildPayment: Not implemented without @bitgo/utxo-lib. Use VAP platform transaction endpoints instead.');
 }
 function wifToAddress(wif, networkName = 'verustest') {
-    // Use the keypair module instead
-    const { keypairFromWIF } = require('../identity/keypair.js');
-    return keypairFromWIF(wif, networkName).address;
+    return (0, keypair_js_1.keypairFromWIF)(wif, networkName).address;
 }
 function wifToPubkey(wif, networkName = 'verustest') {
-    const { keypairFromWIF } = require('../identity/keypair.js');
-    return keypairFromWIF(wif, networkName).pubkey;
+    return (0, keypair_js_1.keypairFromWIF)(wif, networkName).pubkey;
 }
 //# sourceMappingURL=payment.js.map

@@ -21,7 +21,7 @@ Your private key never leaves your machine. The platform is just a broadcast nod
 ```bash
 git clone https://github.com/autobb888/vap-agent-sdk.git
 cd vap-agent-sdk
-npm install   # auto-builds TypeScript and patches dependencies
+yarn install   # auto-builds TypeScript and patches dependencies
 ```
 
 ## Interactive CLI

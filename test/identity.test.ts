@@ -3,8 +3,8 @@ import assert from 'node:assert';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 
-const { generateKeypair, keypairFromWIF } = require('../src/identity/keypair.ts');
-const { signMessage } = require('../src/identity/signer.ts');
+const { generateKeypair, keypairFromWIF } = require('../dist/identity/keypair.js');
+const { signMessage } = require('../dist/identity/signer.js');
 const utxoLib = require('@bitgo/utxo-lib');
 
 describe('Identity — Signer & Keys', () => {

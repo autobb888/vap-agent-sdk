@@ -5,9 +5,9 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 
 // These use require() internally for @bitgo/utxo-lib (CommonJS)
-const { generateKeypair, keypairFromWIF } = require('../src/identity/keypair.ts');
-const { signMessage, signChallenge } = require('../src/identity/signer.ts');
-const { buildPayment, selectUtxos, wifToAddress } = require('../src/tx/payment.ts');
+const { generateKeypair, keypairFromWIF } = require('../dist/identity/keypair.js');
+const { signMessage, signChallenge } = require('../dist/identity/signer.js');
+const { buildPayment, selectUtxos, wifToAddress } = require('../dist/tx/payment.js');
 
 describe('Keypair Generation', () => {
   it('generates a valid keypair', () => {

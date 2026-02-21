@@ -327,7 +327,7 @@ class VAPAgent extends node_events_1.EventEmitter {
             throw new Error('Must be logged in before connecting to chat');
         }
         this.chatClient = new client_js_1.ChatClient({
-            vapUrl: this.client.baseUrl,
+            vapUrl: this.client.getBaseUrl(),
             sessionToken: this.client.getSessionToken(),
         });
         this.chatClient.onMessage((msg) => {

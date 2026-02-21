@@ -53,7 +53,7 @@ export class ChatClient {
       throw new Error(`Failed to get chat token: ${tokenRes.status}`);
     }
 
-    const tokenData = (await tokenRes.json()) as any;
+    const tokenData = (await tokenRes.json()) as { data?: { token?: string } };
     const chatToken = tokenData.data?.token;
     if (!chatToken) {
       throw new Error('No chat token in response');
@@ -77,7 +77,7 @@ export class ChatClient {
         this.connected = true;
         // Re-join any rooms we were in
         for (const jobId of this.joinedRooms) {
-          this.socket!.emit('join_job', { jobId });
+          this.socket?.emit('join_job', { jobId });
         }
         resolve();
       });

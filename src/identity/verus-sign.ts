@@ -169,9 +169,7 @@ export function signChallenge(
   let keyPair;
   try {
     keyPair = ECPair.fromWIF(wif, networkObj);
-  } catch (err: any) {
-    console.error('[signChallenge] ECPair.fromWIF failed:', err.message);
-    console.error('[signChallenge] Network:', network);
+  } catch (err: unknown) {
     throw err;
   }
   
@@ -190,18 +188,14 @@ export function signChallenge(
       chainId, // chain ID (required!)
       signingIdentity // identity (i-address or null for R-address)
     );
-  } catch (err: any) {
-    console.error('[signChallenge] new IdentitySignature failed:', err.message);
-    console.error('[signChallenge] signingIdentity:', signingIdentity);
-    console.error('[signChallenge] chainId:', chainId);
+  } catch (err: unknown) {
     throw err;
   }
   
   // Sign the message
   try {
     idSig.signMessageOffline(challenge, keyPair);
-  } catch (err: any) {
-    console.error('[signChallenge] signMessageOffline failed:', err.message);
+  } catch (err: unknown) {
     throw err;
   }
   

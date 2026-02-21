@@ -3,10 +3,10 @@ import assert from 'node:assert';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 
-const { generateAttestationPayload, signAttestation, verifyAttestationFormat } = require('../src/privacy/attestation.ts');
-const { PRIVACY_TIERS } = require('../src/privacy/tiers.ts');
-const { generateKeypair } = require('../src/identity/keypair.ts');
-const { privacyPremium } = require('../src/pricing/calculator.ts');
+const { generateAttestationPayload, signAttestation, verifyAttestationFormat } = require('../dist/privacy/attestation.js');
+const { PRIVACY_TIERS } = require('../dist/privacy/tiers.js');
+const { generateKeypair } = require('../dist/identity/keypair.js');
+const { privacyPremium } = require('../dist/pricing/calculator.js');
 
 const sampleParams = {
   jobId: 'job-123',

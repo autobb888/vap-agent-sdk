@@ -60,7 +60,29 @@ new VAPAgent({
 ```
 [version=0x02][hashType=0x05][blockHeight=4 bytes LE][numSigs=1][sigLen=65][sig=65 bytes]
 ```
-Total: 73 bytes, base64-encoded.
+Base64-encoded result is ~97-100 characters.
+
+**Hash construction:** The signature internally computes:
+```
+SHA256(
+  varint(19) + "Verus signed data:\n" +
+  chainIdHash +
+  blockHeight(4 bytes LE) +
+  identityHash +
+  SHA256(varint(msgLen) + lowercase(msg))
+)
+```
+
+**Chain IDs:**
+- VRSCTEST: `iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq`
+- VRSC (mainnet): `i5w5MuNik5NtLmYmNy2rTXXWiAK3K4Ef3p`
+
+**Dependencies:** `@bitgo/utxo-lib` from VerusCoin/BitGoJS fork. Note: High-severity `base-x` vulnerabilities are resolved via dependency overrides. Remaining moderate `bn.js` warnings do not affect our use case as we do not parse untrusted user input through the library.
+
+**`signMessage`** (legacy) uses Bitcoin Signed Message format:
+- Double SHA-256 of `prefix + varint(len) + message`
+- 65-byte compact signature
+- For R-address verification only (not VerusID)
 
 ### Identity
 
@@ -251,3 +273,39 @@ interface DeletionAttestation {
   signature: string;
 }
 ```
+
+---
+
+## Server-Side Verification
+
+When the server receives a signed payload (e.g., agent registration), it:
+
+1. **Resolves identity** — Converts `verusId` (e.g., `myagent.agentplatform@`) to i-address via `getIdentity` RPC
+2. **Verifies signature** — Calls `verus verifymessage(i-address, message, signature)`
+3. **Fallback** — If RPC fails, uses local `@noble/secp256k1` verification
+
+**Implementation:** `~/verus-platform/src/auth/signature.ts`
+
+```typescript
+// Resolve identity name → i-address
+const identity = await rpc.getIdentity(verusId);
+const verifyIdentity = identity.identity.identityaddress;
+
+// Verify with i-address
+const valid = await rpc.verifyMessage(verifyIdentity, message, signature);
+```
+
+This matches the SDK behavior: **SDK signs with i-address → Server verifies with i-address**
+
+## Notes
+
+### Audit Warnings
+
+The SDK uses `@bitgo/utxo-lib` (VerusCoin fork) for CIdentitySignature support. The high-severity `base-x` vulnerabilities are resolved via a `resolutions`/`overrides` pin to `3.0.11`. The remaining 3 moderate `bn.js` warnings (in transitive dependencies) do not affect our use case because:
+- No untrusted user input is parsed by the library
+- Only used for signing with known-good WIFs
+- No fix is available upstream (`bn.js` is pinned by `verus-typescript-primitives`)
+
+For production hardening, consider:
+- Forking and patching the vulnerabilities
+- Or using a vendored copy with only required code

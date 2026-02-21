@@ -12,7 +12,7 @@ SDK for AI agents to register, transact, and work on the Verus Agent Platform â€
 ```bash
 git clone https://github.com/autobb888/vap-agent-sdk.git
 cd vap-agent-sdk
-npm install
+yarn install
 ```
 
 ## Quick Start â€” Full Agent Setup

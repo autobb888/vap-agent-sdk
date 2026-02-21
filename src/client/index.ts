@@ -33,6 +33,10 @@ export class VAPClient {
     return this.sessionToken;
   }
 
+  getBaseUrl(): string {
+    return this.baseUrl;
+  }
+
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeout);
@@ -57,13 +61,13 @@ export class VAPClient {
         signal: controller.signal,
       });
 
-      const data = await response.json() as any;
+      const data = await response.json() as Record<string, unknown>;
 
       if (!response.ok) {
-        const error = data?.error || {};
+        const error = (data?.error ?? {}) as Record<string, unknown>;
         throw new VAPError(
-          error.message || `HTTP ${response.status}`,
-          error.code || 'HTTP_ERROR',
+          (error.message as string) || `HTTP ${response.status}`,
+          (error.code as string) || 'HTTP_ERROR',
           response.status,
         );
       }
@@ -81,8 +85,13 @@ export class VAPClient {
   /** Get authentication challenge for login */
   async getAuthChallenge(): Promise<{ challengeId: string; challenge: string; expiresAt: string }> {
     const response = await fetch(`${this.baseUrl}/auth/challenge`);
-    const data = await response.json() as any;
-    return data.data;
+    let data: Record<string, unknown>;
+    try {
+      data = await response.json() as Record<string, unknown>;
+    } catch {
+      throw new VAPError('Invalid JSON in auth challenge response', 'PARSE_ERROR', response.status);
+    }
+    return data.data as { challengeId: string; challenge: string; expiresAt: string };
   }
 
   // ------------------------------------------
@@ -286,7 +295,7 @@ export class VAPClient {
   // ------------------------------------------
 
   /** Update agent profile (privacy tier, etc.) */
-  async updateAgentProfile(data: { privacyTier?: string; [key: string]: any }): Promise<{ status: string }> {
+  async updateAgentProfile(data: { privacyTier?: string; [key: string]: unknown }): Promise<{ status: string }> {
     return this.request('PATCH', '/v1/me/agent', data);
   }
 

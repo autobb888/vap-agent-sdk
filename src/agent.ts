@@ -108,8 +108,8 @@ export class VAPAgent extends EventEmitter {
     }
 
     // Step 2: Sign the challenge with our private key
-    const challenge = (challengeResp as any).challenge as string;
-    const token = (challengeResp as any).token as string;
+    const challenge = challengeResp.challenge!;
+    const token = challengeResp.token!;
     // Onboarding: Use IdentitySignature format with R-address as identity
     // (the local verification expects this format, not legacy signMessage)
     // Onboarding challenge uses R-address message verification path on server.
@@ -381,7 +381,7 @@ export class VAPAgent extends EventEmitter {
     }
 
     this.chatClient = new ChatClient({
-      vapUrl: (this.client as any).baseUrl,
+      vapUrl: this.client.getBaseUrl(),
       sessionToken: this.client.getSessionToken()!,
     });
 

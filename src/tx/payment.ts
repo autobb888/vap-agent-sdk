@@ -7,6 +7,7 @@
  */
 
 import type { Utxo } from '../client/index.js';
+import { keypairFromWIF } from '../identity/keypair.js';
 
 export interface PaymentParams {
   wif: string;
@@ -30,12 +31,9 @@ export function buildPayment(params: PaymentParams): string {
 }
 
 export function wifToAddress(wif: string, networkName: 'verus' | 'verustest' = 'verustest'): string {
-  // Use the keypair module instead
-  const { keypairFromWIF } = require('../identity/keypair.js');
   return keypairFromWIF(wif, networkName).address;
 }
 
 export function wifToPubkey(wif: string, networkName: 'verus' | 'verustest' = 'verustest'): string {
-  const { keypairFromWIF } = require('../identity/keypair.js');
   return keypairFromWIF(wif, networkName).pubkey;
 }

@@ -7,6 +7,7 @@
  */
 
 import { signMessage } from '../identity/signer.js';
+import { canonicalize as jsonCanonicalize } from 'json-canonicalize';
 
 export interface DeletionAttestation {
   jobId: string;
@@ -51,7 +52,7 @@ export function generateAttestationPayload(params: AttestationParams): Omit<Dele
  * Keys are sorted alphabetically for deterministic output.
  */
 function canonicalize(payload: Omit<DeletionAttestation, 'signature'>): string {
-  return JSON.stringify(payload, Object.keys(payload).sort());
+  return jsonCanonicalize(payload);
 }
 
 /**

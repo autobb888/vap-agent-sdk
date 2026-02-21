@@ -3,8 +3,8 @@ import assert from 'node:assert';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 
-const { buildPayment, selectUtxos } = require('../src/tx/payment.ts');
-const { generateKeypair } = require('../src/identity/keypair.ts');
+const { buildPayment, selectUtxos } = require('../dist/tx/payment.js');
+const { generateKeypair } = require('../dist/identity/keypair.js');
 
 describe('Transaction Builder', () => {
   it('insufficient funds throws appropriate error', () => {

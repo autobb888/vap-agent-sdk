@@ -11,6 +11,7 @@ exports.generateAttestationPayload = generateAttestationPayload;
 exports.signAttestation = signAttestation;
 exports.verifyAttestationFormat = verifyAttestationFormat;
 const signer_js_1 = require("../identity/signer.js");
+const json_canonicalize_1 = require("json-canonicalize");
 /**
  * Generate the canonical JSON payload for a deletion attestation.
  * Uses sorted keys for deterministic output.
@@ -32,7 +33,7 @@ function generateAttestationPayload(params) {
  * Keys are sorted alphabetically for deterministic output.
  */
 function canonicalize(payload) {
-    return JSON.stringify(payload, Object.keys(payload).sort());
+    return (0, json_canonicalize_1.canonicalize)(payload);
 }
 /**
  * Sign a deletion attestation payload.

@@ -84,7 +84,7 @@ async function main() {
   } catch (err) {
     if (err.message.includes('Challenge too long')) {
       console.log('  ❌ Still getting "Challenge too long" — SDK fix not applied correctly');
-      console.log('  Try rebuilding SDK: cd ~/vap-agent-sdk && npm run build');
+      console.log('  Try rebuilding SDK: cd ~/vap-agent-sdk && yarn build');
     } else {
       throw err;
     }

@@ -184,8 +184,6 @@ function signChallenge(wif, challenge, identityAddress, network = 'verustest') {
         keyPair = ECPair.fromWIF(wif, networkObj);
     }
     catch (err) {
-        console.error('[signChallenge] ECPair.fromWIF failed:', err.message);
-        console.error('[signChallenge] Network:', network);
         throw err;
     }
     // Create IdentitySignature
@@ -202,9 +200,6 @@ function signChallenge(wif, challenge, identityAddress, network = 'verustest') {
         );
     }
     catch (err) {
-        console.error('[signChallenge] new IdentitySignature failed:', err.message);
-        console.error('[signChallenge] signingIdentity:', signingIdentity);
-        console.error('[signChallenge] chainId:', chainId);
         throw err;
     }
     // Sign the message
@@ -212,7 +207,6 @@ function signChallenge(wif, challenge, identityAddress, network = 'verustest') {
         idSig.signMessageOffline(challenge, keyPair);
     }
     catch (err) {
-        console.error('[signChallenge] signMessageOffline failed:', err.message);
         throw err;
     }
     // Return compact signature (65 bytes) for both R-address and i-address

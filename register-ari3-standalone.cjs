@@ -1,6 +1,6 @@
 /**
  * Standalone ari3 registration script
- * Uses built SDK files directly, no npm install needed
+ * Uses built SDK files directly, no yarn install needed
  */
 
 const fs = require('fs');
@@ -9,7 +9,7 @@ const path = require('path');
 // Load the built SDK
 const sdkPath = path.join(__dirname, 'dist', 'index.js');
 if (!fs.existsSync(sdkPath)) {
-  console.error('❌ SDK not built. Run: npm run build');
+  console.error('❌ SDK not built. Run: yarn build');
   process.exit(1);
 }
 
