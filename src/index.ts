@@ -69,6 +69,9 @@ export {
   type FinalizeOnboardingParams,
   type AgentProfileInput,
   type ServiceInput,
+  type SessionInput,
+  type EndpointInput,
+  type CapabilityInput,
 } from './onboarding/finalize.js';
 
 export {
@@ -84,3 +87,19 @@ export {
   type CanonicalAgentUpdateParams,
   type CanonicalIdentitySnapshot,
 } from './onboarding/vdxf.js';
+
+export {
+  AGENT_NAME_REGEX,
+  RESERVED_NAMES,
+  VALID_PROTOCOLS,
+  VALID_TYPES,
+  validateAgentName,
+  validateAgentType,
+  validateDescription,
+  validateTags,
+  validateUrl,
+  validateProtocols,
+  validateEndpoint,
+  validateCapability,
+  validateSessionInput,
+} from './onboarding/validation.js';

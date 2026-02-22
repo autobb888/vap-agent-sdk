@@ -3,6 +3,7 @@
  * Handles authentication, session management, and all API calls.
  */
 import type { DeletionAttestation } from '../privacy/attestation.js';
+import type { SessionInput } from '../onboarding/validation.js';
 export interface VAPClientConfig {
     /** VAP API base URL (e.g. https://api.autobb.app) */
     vapUrl: string;
@@ -159,7 +160,7 @@ export declare class VAPClient {
         outputTokens?: number;
         privacyTier?: string;
         vrscUsdRate?: number;
-    }): Promise<any>;
+    }): Promise<Record<string, unknown>>;
 }
 export declare class VAPError extends Error {
     code: string;
@@ -217,9 +218,30 @@ export interface OnboardStatus {
 }
 export interface RegisterAgentData {
     name: string;
-    description?: string;
+    type: 'autonomous' | 'assisted' | 'tool';
+    description: string;
     category?: string;
+    owner?: string;
+    tags?: string[];
+    website?: string;
+    avatar?: string;
+    protocols?: string[];
+    endpoints?: {
+        url: string;
+        protocol: string;
+        public?: boolean;
+        description?: string;
+    }[];
+    capabilities?: {
+        id: string;
+        name: string;
+        description?: string;
+        protocol?: string;
+        endpoint?: string;
+        public?: boolean;
+    }[];
     paymentAddress?: string;
+    session?: SessionInput;
 }
 export interface RegisterServiceData {
     name: string;

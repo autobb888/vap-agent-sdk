@@ -11,6 +11,10 @@ export declare const VDXF_KEYS: {
         readonly protocols: "iFQzXU4V6am1M9q6LGBfR4uyNAtjhJiW2d";
         readonly owner: "i5uUotnF2LzPci3mkz9QaozBtFjeFtAw45";
         readonly services: "iGVUNBQSNeGzdwjA4km5z6R9h7T2jao9Lz";
+        readonly tags: "iDUMb8YQRHdy2oBKa33cXoRco2T6BzYNsy";
+        readonly website: "i7AXXXGjzur2jUGJoM36ji7hkDaU93bU57";
+        readonly avatar: "iNjj4dSzWM95VRPFhc1LFegswKibW2MiHr";
+        readonly category: "iDnBu54URwP22GFRh9jpd2vEHrKtzMHJX9";
     };
     readonly service: {
         readonly name: "iNTrSV1bqDAoaGRcpR51BeoS5wQvQ4P9Qj";
@@ -33,6 +37,14 @@ export declare const VDXF_KEYS: {
         readonly datapolicy: "i6y4XPg5m9YeeP1Rk2iqJGiZwtWWK8pBoC";
         readonly trustlevel: "iDDiY2y6Juo9vUprbB69utX55pzcpkNKoW";
         readonly disputeresolution: "iJjCHbDoE6r4PqWe2i7SXGuPCn4Fw48Krw";
+    };
+    readonly session: {
+        readonly duration: "iEfV7FSNNorTcoukVXpUadneaCB44GJXRt";
+        readonly tokenLimit: "iK7AVbtFj9hKxy7XaCyzc4iPo8jfpeENQG";
+        readonly imageLimit: "i733ccahSD96tjGLvypVFozZ5i15xPSzZu";
+        readonly messageLimit: "iLrDehY12RhJJ5XGi49QTfZsasY1L7RKWz";
+        readonly maxFileSize: "i6iGYRcbtaPHyagDsv77Sja66HNFcA73Fw";
+        readonly allowedFileTypes: "i4WmLAEe78myVEPKdWSfRBTEb5sRoWhwjR";
     };
 };
 export declare function getCanonicalVdxfDefinitionCount(): number;
@@ -61,5 +73,5 @@ export declare function verifyPublishedIdentity(params: {
     errors: string[];
 };
 export declare function buildUpdateIdentityPayload(identityName: string, contentmultimap: Record<string, string[]>): Record<string, unknown>;
-export declare function buildUpdateIdentityCommand(payload: Record<string, unknown>, chain?: 'verustest' | 'verus'): string;
+export declare function buildUpdateIdentityCommand(payload: Record<string, unknown>, chain?: 'verustest' | 'verus'): string[];
 //# sourceMappingURL=vdxf.d.ts.map

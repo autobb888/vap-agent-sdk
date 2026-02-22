@@ -21,6 +21,8 @@ import { signChallenge, signMessage } from './identity/signer.js';
 import { ChatClient, type IncomingMessage, type MessageHandler } from './chat/client.js';
 import type { JobHandler, JobHandlerConfig } from './jobs/types.js';
 import type { Job } from './client/index.js';
+import type { SessionInput } from './onboarding/finalize.js';
+import { buildAgentContentMultimap, buildUpdateIdentityPayload } from './onboarding/vdxf.js';
 import type { PrivacyTier } from './privacy/tiers.js';
 import { generateAttestationPayload, signAttestation, type DeletionAttestation } from './privacy/attestation.js';
 import { recommendPrice, type PriceRecommendation } from './pricing/calculator.js';
@@ -60,6 +62,9 @@ export class VAPAgent extends EventEmitter {
   constructor(config: VAPAgentConfig) {
     super();
 
+    if (config.vapUrl.startsWith('http://')) {
+      console.warn('[VAP Agent] ⚠️  WARNING: Using insecure HTTP connection. Keys and signatures will be sent in cleartext. Use HTTPS in production.');
+    }
     this.vapUrl = config.vapUrl;
     this.client = new VAPClient({ vapUrl: config.vapUrl });
     this.wif = config.wif || null;
@@ -183,9 +188,17 @@ export class VAPAgent extends EventEmitter {
    */
   async registerWithVAP(agentData: {
     name: string;
-    type?: 'autonomous' | 'assisted' | 'hybrid' | 'tool';
-    description?: string;
+    type: 'autonomous' | 'assisted' | 'tool';
+    description: string;
     category?: string;
+    owner?: string;
+    tags?: string[];
+    website?: string;
+    avatar?: string;
+    protocols?: string[];
+    endpoints?: { url: string; protocol: string; public?: boolean; description?: string }[];
+    capabilities?: { id: string; name: string; description?: string; protocol?: string; endpoint?: string; public?: boolean; pricing?: { amount: number; currency: string; per?: string }; rateLimit?: { requests: number; period: string } }[];
+    session?: SessionInput;
   }): Promise<{ agentId: string }> {
     if (!this.wif) {
       throw new Error('WIF key required for registration');
@@ -207,6 +220,9 @@ export class VAPAgent extends EventEmitter {
     // Step 1: Login
     console.log(`[VAP Agent] Logging in...`);
     const challengeRes = await this.client.getAuthChallenge();
+    if (challengeRes.expiresAt && new Date(challengeRes.expiresAt).getTime() < Date.now()) {
+      throw new Error('Auth challenge already expired — clock skew or stale response');
+    }
     // /auth/login uses verifymessage-compatible signatures
     const signature = signMessage(this.wif, challengeRes.challenge, this.networkType);
     
@@ -221,8 +237,9 @@ export class VAPAgent extends EventEmitter {
     });
 
     if (!loginRes.ok) {
-      const err = await loginRes.json();
-      throw new Error(`Login failed: ${err.error?.message || loginRes.statusText}`);
+      let errMsg = loginRes.statusText;
+      try { const err = await loginRes.json(); errMsg = err.error?.message || errMsg; } catch { /* non-JSON response */ }
+      throw new Error(`Login failed: ${errMsg}`);
     }
 
     const cookies = loginRes.headers.get('set-cookie');
@@ -254,7 +271,8 @@ export class VAPAgent extends EventEmitter {
       body: JSON.stringify({ ...payload, signature: regSignature }),
     });
 
-    const regData = await regRes.json();
+    let regData: Record<string, any>;
+    try { regData = await regRes.json(); } catch { regData = {}; }
 
     if (regRes.status === 409) {
       console.log(`[VAP Agent] Agent already registered`);
@@ -267,6 +285,28 @@ export class VAPAgent extends EventEmitter {
 
     console.log(`[VAP Agent] ✅ Registered with VAP platform`);
     this.emit('registeredWithVAP', { agentId: regData.data?.agentId });
+
+    // Build VDXF contentmultimap for on-chain publishing
+    const profile = {
+      name: agentData.name,
+      type: agentData.type,
+      description: agentData.description,
+      category: agentData.category,
+      owner: agentData.owner,
+      tags: agentData.tags,
+      website: agentData.website,
+      avatar: agentData.avatar,
+      protocols: agentData.protocols as ('MCP' | 'REST' | 'A2A' | 'WebSocket')[] | undefined,
+      endpoints: agentData.endpoints,
+      capabilities: agentData.capabilities,
+      session: agentData.session,
+    };
+
+    const contentmultimap = buildAgentContentMultimap(profile);
+    const identityName = this.identityName!;
+    const updatePayload = buildUpdateIdentityPayload(identityName, contentmultimap);
+
+    this.emit('vdxf:payload', { contentmultimap, updatePayload });
 
     return { agentId: regData.data?.agentId };
   }
@@ -320,7 +360,8 @@ export class VAPAgent extends EventEmitter {
       body: JSON.stringify(serviceData),
     });
 
-    const serviceData2 = await serviceRes.json();
+    let serviceData2: Record<string, any>;
+    try { serviceData2 = await serviceRes.json(); } catch { serviceData2 = {}; }
 
     if (!serviceRes.ok) {
       throw new Error(`Service registration failed: ${serviceData2.error?.message || serviceRes.statusText}`);

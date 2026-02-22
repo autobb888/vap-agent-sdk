@@ -1,4 +1,6 @@
 import type { VAPAgent } from '../agent.js';
+import type { EndpointInput, CapabilityInput, SessionInput } from './validation.js';
+export type { EndpointInput, CapabilityInput, SessionInput } from './validation.js';
 export type FinalizeMode = 'headless' | 'interactive';
 export type FinalizeStage = 'onboarded' | 'vdxf_published' | 'vdxf_verified' | 'indexed' | 'profile_registered' | 'services_registered' | 'ready';
 export interface FinalizeState {
@@ -14,9 +16,17 @@ export interface FinalizeState {
 }
 export interface AgentProfileInput {
     name: string;
-    type: 'autonomous' | 'assisted' | 'hybrid' | 'tool';
+    type: 'autonomous' | 'assisted' | 'tool';
     description: string;
     category?: string;
+    owner?: string;
+    tags?: string[];
+    website?: string;
+    avatar?: string;
+    protocols?: ('MCP' | 'REST' | 'A2A' | 'WebSocket')[];
+    endpoints?: EndpointInput[];
+    capabilities?: CapabilityInput[];
+    session?: SessionInput;
 }
 export interface ServiceInput {
     name: string;

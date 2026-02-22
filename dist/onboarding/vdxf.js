@@ -21,6 +21,10 @@ exports.VDXF_KEYS = {
         protocols: 'iFQzXU4V6am1M9q6LGBfR4uyNAtjhJiW2d',
         owner: 'i5uUotnF2LzPci3mkz9QaozBtFjeFtAw45',
         services: 'iGVUNBQSNeGzdwjA4km5z6R9h7T2jao9Lz',
+        tags: 'iDUMb8YQRHdy2oBKa33cXoRco2T6BzYNsy',
+        website: 'i7AXXXGjzur2jUGJoM36ji7hkDaU93bU57',
+        avatar: 'iNjj4dSzWM95VRPFhc1LFegswKibW2MiHr',
+        category: 'iDnBu54URwP22GFRh9jpd2vEHrKtzMHJX9',
     },
     service: {
         name: 'iNTrSV1bqDAoaGRcpR51BeoS5wQvQ4P9Qj',
@@ -43,6 +47,14 @@ exports.VDXF_KEYS = {
         datapolicy: 'i6y4XPg5m9YeeP1Rk2iqJGiZwtWWK8pBoC',
         trustlevel: 'iDDiY2y6Juo9vUprbB69utX55pzcpkNKoW',
         disputeresolution: 'iJjCHbDoE6r4PqWe2i7SXGuPCn4Fw48Krw',
+    },
+    session: {
+        duration: 'iEfV7FSNNorTcoukVXpUadneaCB44GJXRt',
+        tokenLimit: 'iK7AVbtFj9hKxy7XaCyzc4iPo8jfpeENQG',
+        imageLimit: 'i733ccahSD96tjGLvypVFozZ5i15xPSzZu',
+        messageLimit: 'iLrDehY12RhJJ5XGi49QTfZsasY1L7RKWz',
+        maxFileSize: 'i6iGYRcbtaPHyagDsv77Sja66HNFcA73Fw',
+        allowedFileTypes: 'i4WmLAEe78myVEPKdWSfRBTEb5sRoWhwjR',
     },
 };
 function getCanonicalVdxfDefinitionCount() {
@@ -67,6 +79,50 @@ function buildAgentContentMultimap(profile, services = []) {
         contentmultimap[exports.VDXF_KEYS.agent.name] = [encodeVdxfValue(profile.name)];
         contentmultimap[exports.VDXF_KEYS.agent.description] = [encodeVdxfValue(profile.description)];
         contentmultimap[exports.VDXF_KEYS.agent.status] = [encodeVdxfValue('active')];
+        if (profile.category) {
+            contentmultimap[exports.VDXF_KEYS.agent.category] = [encodeVdxfValue(profile.category)];
+        }
+        if (profile.owner) {
+            contentmultimap[exports.VDXF_KEYS.agent.owner] = [encodeVdxfValue(profile.owner)];
+        }
+        if (profile.tags?.length) {
+            contentmultimap[exports.VDXF_KEYS.agent.tags] = [encodeVdxfValue(profile.tags)];
+        }
+        if (profile.website) {
+            contentmultimap[exports.VDXF_KEYS.agent.website] = [encodeVdxfValue(profile.website)];
+        }
+        if (profile.avatar) {
+            contentmultimap[exports.VDXF_KEYS.agent.avatar] = [encodeVdxfValue(profile.avatar)];
+        }
+        if (profile.protocols?.length) {
+            contentmultimap[exports.VDXF_KEYS.agent.protocols] = [encodeVdxfValue(profile.protocols)];
+        }
+        if (profile.endpoints?.length) {
+            contentmultimap[exports.VDXF_KEYS.agent.endpoints] = profile.endpoints.map(ep => encodeVdxfValue(ep));
+        }
+        if (profile.capabilities?.length) {
+            contentmultimap[exports.VDXF_KEYS.agent.capabilities] = profile.capabilities.map(cap => encodeVdxfValue(cap));
+        }
+        if (profile.session) {
+            if (profile.session.duration != null) {
+                contentmultimap[exports.VDXF_KEYS.session.duration] = [encodeVdxfValue(profile.session.duration)];
+            }
+            if (profile.session.tokenLimit != null) {
+                contentmultimap[exports.VDXF_KEYS.session.tokenLimit] = [encodeVdxfValue(profile.session.tokenLimit)];
+            }
+            if (profile.session.imageLimit != null) {
+                contentmultimap[exports.VDXF_KEYS.session.imageLimit] = [encodeVdxfValue(profile.session.imageLimit)];
+            }
+            if (profile.session.messageLimit != null) {
+                contentmultimap[exports.VDXF_KEYS.session.messageLimit] = [encodeVdxfValue(profile.session.messageLimit)];
+            }
+            if (profile.session.maxFileSize != null) {
+                contentmultimap[exports.VDXF_KEYS.session.maxFileSize] = [encodeVdxfValue(profile.session.maxFileSize)];
+            }
+            if (profile.session.allowedFileTypes?.length) {
+                contentmultimap[exports.VDXF_KEYS.session.allowedFileTypes] = [encodeVdxfValue(profile.session.allowedFileTypes)];
+            }
+        }
     }
     if (services.length > 0) {
         contentmultimap[exports.VDXF_KEYS.agent.services] = services.map((svc) => encodeVdxfValue({
@@ -163,6 +219,6 @@ function buildUpdateIdentityPayload(identityName, contentmultimap) {
 }
 function buildUpdateIdentityCommand(payload, chain = 'verustest') {
     const chainArg = chain === 'verustest' ? '-chain=vrsctest' : '-chain=vrsc';
-    return `verus ${chainArg} updateidentity '${JSON.stringify(payload)}'`;
+    return ['verus', chainArg, 'updateidentity', JSON.stringify(payload)];
 }
 //# sourceMappingURL=vdxf.js.map

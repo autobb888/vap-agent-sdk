@@ -18,6 +18,7 @@ import { VAPClient } from './client/index.js';
 import { type Keypair } from './identity/keypair.js';
 import { type IncomingMessage } from './chat/client.js';
 import type { JobHandler, JobHandlerConfig } from './jobs/types.js';
+import type { SessionInput } from './onboarding/finalize.js';
 import type { PrivacyTier } from './privacy/tiers.js';
 import { type DeletionAttestation } from './privacy/attestation.js';
 import { type PriceRecommendation } from './pricing/calculator.js';
@@ -77,9 +78,38 @@ export declare class VAPAgent extends EventEmitter {
      */
     registerWithVAP(agentData: {
         name: string;
-        type?: 'autonomous' | 'assisted' | 'hybrid' | 'tool';
-        description?: string;
+        type: 'autonomous' | 'assisted' | 'tool';
+        description: string;
         category?: string;
+        owner?: string;
+        tags?: string[];
+        website?: string;
+        avatar?: string;
+        protocols?: string[];
+        endpoints?: {
+            url: string;
+            protocol: string;
+            public?: boolean;
+            description?: string;
+        }[];
+        capabilities?: {
+            id: string;
+            name: string;
+            description?: string;
+            protocol?: string;
+            endpoint?: string;
+            public?: boolean;
+            pricing?: {
+                amount: number;
+                currency: string;
+                per?: string;
+            };
+            rateLimit?: {
+                requests: number;
+                period: string;
+            };
+        }[];
+        session?: SessionInput;
     }): Promise<{
         agentId: string;
     }>;

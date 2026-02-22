@@ -54,6 +54,7 @@ const index_js_1 = require("./client/index.js");
 const keypair_js_1 = require("./identity/keypair.js");
 const signer_js_1 = require("./identity/signer.js");
 const client_js_1 = require("./chat/client.js");
+const vdxf_js_1 = require("./onboarding/vdxf.js");
 const attestation_js_1 = require("./privacy/attestation.js");
 const calculator_js_1 = require("./pricing/calculator.js");
 class VAPAgent extends node_events_1.EventEmitter {
@@ -72,6 +73,9 @@ class VAPAgent extends node_events_1.EventEmitter {
     vapUrl;
     constructor(config) {
         super();
+        if (config.vapUrl.startsWith('http://')) {
+            console.warn('[VAP Agent] ⚠️  WARNING: Using insecure HTTP connection. Keys and signatures will be sent in cleartext. Use HTTPS in production.');
+        }
         this.vapUrl = config.vapUrl;
         this.client = new index_js_1.VAPClient({ vapUrl: config.vapUrl });
         this.wif = config.wif || null;
@@ -189,6 +193,9 @@ class VAPAgent extends node_events_1.EventEmitter {
         // Step 1: Login
         console.log(`[VAP Agent] Logging in...`);
         const challengeRes = await this.client.getAuthChallenge();
+        if (challengeRes.expiresAt && new Date(challengeRes.expiresAt).getTime() < Date.now()) {
+            throw new Error('Auth challenge already expired — clock skew or stale response');
+        }
         // /auth/login uses verifymessage-compatible signatures
         const signature = (0, signer_js_1.signMessage)(this.wif, challengeRes.challenge, this.networkType);
         const loginRes = await fetch(`${this.vapUrl}/auth/login`, {
@@ -201,8 +208,13 @@ class VAPAgent extends node_events_1.EventEmitter {
             }),
         });
         if (!loginRes.ok) {
-            const err = await loginRes.json();
-            throw new Error(`Login failed: ${err.error?.message || loginRes.statusText}`);
+            let errMsg = loginRes.statusText;
+            try {
+                const err = await loginRes.json();
+                errMsg = err.error?.message || errMsg;
+            }
+            catch { /* non-JSON response */ }
+            throw new Error(`Login failed: ${errMsg}`);
         }
         const cookies = loginRes.headers.get('set-cookie');
         console.log(`[VAP Agent] ✅ Logged in`);
@@ -228,7 +240,13 @@ class VAPAgent extends node_events_1.EventEmitter {
             },
             body: JSON.stringify({ ...payload, signature: regSignature }),
         });
-        const regData = await regRes.json();
+        let regData;
+        try {
+            regData = await regRes.json();
+        }
+        catch {
+            regData = {};
+        }
         if (regRes.status === 409) {
             console.log(`[VAP Agent] Agent already registered`);
             return { agentId: 'existing' };
@@ -238,6 +256,25 @@ class VAPAgent extends node_events_1.EventEmitter {
         }
         console.log(`[VAP Agent] ✅ Registered with VAP platform`);
         this.emit('registeredWithVAP', { agentId: regData.data?.agentId });
+        // Build VDXF contentmultimap for on-chain publishing
+        const profile = {
+            name: agentData.name,
+            type: agentData.type,
+            description: agentData.description,
+            category: agentData.category,
+            owner: agentData.owner,
+            tags: agentData.tags,
+            website: agentData.website,
+            avatar: agentData.avatar,
+            protocols: agentData.protocols,
+            endpoints: agentData.endpoints,
+            capabilities: agentData.capabilities,
+            session: agentData.session,
+        };
+        const contentmultimap = (0, vdxf_js_1.buildAgentContentMultimap)(profile);
+        const identityName = this.identityName;
+        const updatePayload = (0, vdxf_js_1.buildUpdateIdentityPayload)(identityName, contentmultimap);
+        this.emit('vdxf:payload', { contentmultimap, updatePayload });
         return { agentId: regData.data?.agentId };
     }
     /**
@@ -275,7 +312,13 @@ class VAPAgent extends node_events_1.EventEmitter {
             },
             body: JSON.stringify(serviceData),
         });
-        const serviceData2 = await serviceRes.json();
+        let serviceData2;
+        try {
+            serviceData2 = await serviceRes.json();
+        }
+        catch {
+            serviceData2 = {};
+        }
         if (!serviceRes.ok) {
             throw new Error(`Service registration failed: ${serviceData2.error?.message || serviceRes.statusText}`);
         }

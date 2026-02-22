@@ -6,7 +6,8 @@
  * on the Verus Agent Platform — no Verus daemon required.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.buildUpdateIdentityCommand = exports.buildUpdateIdentityPayload = exports.verifyPublishedIdentity = exports.buildCanonicalAgentUpdate = exports.buildAgentContentMultimap = exports.decodeVdxfValue = exports.encodeVdxfValue = exports.getCanonicalVdxfDefinitionCount = exports.VDXF_KEYS = exports.finalizeOnboarding = exports.privacyPremium = exports.recommendPrice = exports.estimateJobCost = exports.PLATFORM_FEE = exports.CATEGORY_MARKUPS = exports.SELF_HOSTED_COSTS = exports.API_COSTS = exports.IMAGE_COSTS = exports.LLM_COSTS = exports.verifyAttestationFormat = exports.signAttestation = exports.generateAttestationPayload = exports.PRIVACY_TIERS = exports.ChatClient = exports.getDefaultPolicy = exports.POLICY_LABELS = exports.protectSystemPrompt = exports.checkForCanaryLeak = exports.generateCanary = exports.wifToPubkey = exports.wifToAddress = exports.selectUtxos = exports.buildPayment = exports.signChallenge = exports.signMessage = exports.keypairFromWIF = exports.generateKeypair = exports.VAPError = exports.VAPClient = exports.VAPAgent = void 0;
+exports.validateProtocols = exports.validateUrl = exports.validateTags = exports.validateDescription = exports.validateAgentType = exports.validateAgentName = exports.VALID_TYPES = exports.VALID_PROTOCOLS = exports.RESERVED_NAMES = exports.AGENT_NAME_REGEX = exports.buildUpdateIdentityCommand = exports.buildUpdateIdentityPayload = exports.verifyPublishedIdentity = exports.buildCanonicalAgentUpdate = exports.buildAgentContentMultimap = exports.decodeVdxfValue = exports.encodeVdxfValue = exports.getCanonicalVdxfDefinitionCount = exports.VDXF_KEYS = exports.finalizeOnboarding = exports.privacyPremium = exports.recommendPrice = exports.estimateJobCost = exports.PLATFORM_FEE = exports.CATEGORY_MARKUPS = exports.SELF_HOSTED_COSTS = exports.API_COSTS = exports.IMAGE_COSTS = exports.LLM_COSTS = exports.verifyAttestationFormat = exports.signAttestation = exports.generateAttestationPayload = exports.PRIVACY_TIERS = exports.ChatClient = exports.getDefaultPolicy = exports.POLICY_LABELS = exports.protectSystemPrompt = exports.checkForCanaryLeak = exports.generateCanary = exports.wifToPubkey = exports.wifToAddress = exports.selectUtxos = exports.buildPayment = exports.signChallenge = exports.signMessage = exports.keypairFromWIF = exports.generateKeypair = exports.VAPError = exports.VAPClient = exports.VAPAgent = void 0;
+exports.validateSessionInput = exports.validateCapability = exports.validateEndpoint = void 0;
 // Core agent class
 var agent_js_1 = require("./agent.js");
 Object.defineProperty(exports, "VAPAgent", { enumerable: true, get: function () { return agent_js_1.VAPAgent; } });
@@ -73,4 +74,18 @@ Object.defineProperty(exports, "buildCanonicalAgentUpdate", { enumerable: true, 
 Object.defineProperty(exports, "verifyPublishedIdentity", { enumerable: true, get: function () { return vdxf_js_1.verifyPublishedIdentity; } });
 Object.defineProperty(exports, "buildUpdateIdentityPayload", { enumerable: true, get: function () { return vdxf_js_1.buildUpdateIdentityPayload; } });
 Object.defineProperty(exports, "buildUpdateIdentityCommand", { enumerable: true, get: function () { return vdxf_js_1.buildUpdateIdentityCommand; } });
+var validation_js_1 = require("./onboarding/validation.js");
+Object.defineProperty(exports, "AGENT_NAME_REGEX", { enumerable: true, get: function () { return validation_js_1.AGENT_NAME_REGEX; } });
+Object.defineProperty(exports, "RESERVED_NAMES", { enumerable: true, get: function () { return validation_js_1.RESERVED_NAMES; } });
+Object.defineProperty(exports, "VALID_PROTOCOLS", { enumerable: true, get: function () { return validation_js_1.VALID_PROTOCOLS; } });
+Object.defineProperty(exports, "VALID_TYPES", { enumerable: true, get: function () { return validation_js_1.VALID_TYPES; } });
+Object.defineProperty(exports, "validateAgentName", { enumerable: true, get: function () { return validation_js_1.validateAgentName; } });
+Object.defineProperty(exports, "validateAgentType", { enumerable: true, get: function () { return validation_js_1.validateAgentType; } });
+Object.defineProperty(exports, "validateDescription", { enumerable: true, get: function () { return validation_js_1.validateDescription; } });
+Object.defineProperty(exports, "validateTags", { enumerable: true, get: function () { return validation_js_1.validateTags; } });
+Object.defineProperty(exports, "validateUrl", { enumerable: true, get: function () { return validation_js_1.validateUrl; } });
+Object.defineProperty(exports, "validateProtocols", { enumerable: true, get: function () { return validation_js_1.validateProtocols; } });
+Object.defineProperty(exports, "validateEndpoint", { enumerable: true, get: function () { return validation_js_1.validateEndpoint; } });
+Object.defineProperty(exports, "validateCapability", { enumerable: true, get: function () { return validation_js_1.validateCapability; } });
+Object.defineProperty(exports, "validateSessionInput", { enumerable: true, get: function () { return validation_js_1.validateSessionInput; } });
 //# sourceMappingURL=index.js.map

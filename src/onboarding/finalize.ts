@@ -2,6 +2,20 @@ import fs from 'fs';
 import path from 'path';
 import readline from 'readline';
 import type { VAPAgent } from '../agent.js';
+import type { EndpointInput, CapabilityInput, SessionInput } from './validation.js';
+import {
+  validateAgentName,
+  validateAgentType,
+  validateDescription,
+  validateTags,
+  validateUrl,
+  validateProtocols,
+  validateSessionInput,
+  VALID_PROTOCOLS,
+  VALID_TYPES,
+} from './validation.js';
+
+export type { EndpointInput, CapabilityInput, SessionInput } from './validation.js';
 
 export type FinalizeMode = 'headless' | 'interactive';
 
@@ -28,9 +42,17 @@ export interface FinalizeState {
 
 export interface AgentProfileInput {
   name: string;
-  type: 'autonomous' | 'assisted' | 'hybrid' | 'tool';
+  type: 'autonomous' | 'assisted' | 'tool';
   description: string;
   category?: string;
+  owner?: string;
+  tags?: string[];
+  website?: string;
+  avatar?: string;
+  protocols?: ('MCP' | 'REST' | 'A2A' | 'WebSocket')[];
+  endpoints?: EndpointInput[];
+  capabilities?: CapabilityInput[];
+  session?: SessionInput;
 }
 
 export interface ServiceInput {
@@ -64,7 +86,11 @@ function nowIso(): string {
 
 function readState(statePath: string, mode: FinalizeMode, identity?: string | null, iAddress?: string | null): FinalizeState {
   if (fs.existsSync(statePath)) {
-    return JSON.parse(fs.readFileSync(statePath, 'utf8')) as FinalizeState;
+    try {
+      return JSON.parse(fs.readFileSync(statePath, 'utf8')) as FinalizeState;
+    } catch {
+      console.warn(`[Finalize] Corrupt state file ${statePath}, starting fresh`);
+    }
   }
 
   return {
@@ -97,16 +123,148 @@ async function resolveProfile(mode: FinalizeMode, profile: AgentProfileInput | u
   if (mode !== 'interactive') return undefined;
 
   const prompt = hooks?.prompt || defaultPrompt;
-  const name = await prompt('Agent display name');
-  const type = (await prompt('Agent type (autonomous|assisted|hybrid|tool)', 'autonomous')) as AgentProfileInput['type'];
-  const description = await prompt('Agent description');
-  const category = await prompt('Category (optional)', 'general');
 
-  if (!name || !description) {
-    throw new Error('Interactive finalize requires name and description');
+  // Required fields
+  const name = await prompt('Agent name (3-64 chars, letters/numbers/._-)');
+  const nameErr = validateAgentName(name);
+  if (nameErr) throw new Error(nameErr);
+
+  const typeRaw = await prompt(`Agent type (${VALID_TYPES.join('|')})`, 'autonomous');
+  const typeErr = validateAgentType(typeRaw);
+  if (typeErr) throw new Error(typeErr);
+  const type = typeRaw as AgentProfileInput['type'];
+
+  const description = await prompt('Description (10-1000 chars)');
+  const descErr = validateDescription(description);
+  if (descErr) throw new Error(descErr);
+
+  // Optional fields
+  const category = await prompt('Category (optional)', 'general');
+  const owner = await prompt('Owner VerusID (optional)');
+  const tagsRaw = await prompt('Tags (comma-separated, max 20, optional)');
+  const website = await prompt('Website URL (optional)');
+  const avatar = await prompt('Avatar image URL (optional)');
+  const protocolsRaw = await prompt(`Protocols (comma-separated: ${VALID_PROTOCOLS.join(',')}) (optional)`);
+
+  // Parse tags
+  let tags: string[] | undefined;
+  if (tagsRaw) {
+    tags = tagsRaw.split(',').map(t => t.trim()).filter(Boolean);
+    const tagsErr = validateTags(tags);
+    if (tagsErr) throw new Error(tagsErr);
   }
 
-  return { name, type, description, category };
+  // Validate website
+  if (website) {
+    const urlErr = validateUrl(website);
+    if (urlErr) throw new Error(`Website: ${urlErr}`);
+  }
+
+  // Validate avatar
+  if (avatar) {
+    const urlErr = validateUrl(avatar);
+    if (urlErr) throw new Error(`Avatar: ${urlErr}`);
+  }
+
+  // Parse protocols
+  let protocols: AgentProfileInput['protocols'];
+  if (protocolsRaw) {
+    const parsed = protocolsRaw.split(',').map(p => p.trim()).filter(Boolean);
+    const protErr = validateProtocols(parsed);
+    if (protErr) throw new Error(protErr);
+    protocols = parsed as AgentProfileInput['protocols'];
+  }
+
+  // Endpoints (interactive loop)
+  const endpoints: EndpointInput[] = [];
+  let addEndpoint = (await prompt('Add an endpoint? (y/N)', 'N')).toLowerCase();
+  while (addEndpoint === 'y' || addEndpoint === 'yes') {
+    const url = await prompt('  Endpoint URL');
+    const protocol = await prompt('  Protocol (MCP|REST|A2A|WebSocket)');
+    const desc = await prompt('  Description (optional)');
+    const pubRaw = await prompt('  Public? (y/N)', 'N');
+    endpoints.push({
+      url,
+      protocol,
+      description: desc || undefined,
+      public: pubRaw.toLowerCase() === 'y' || pubRaw.toLowerCase() === 'yes',
+    });
+    if (endpoints.length >= 10) break;
+    addEndpoint = (await prompt('Add another endpoint? (y/N)', 'N')).toLowerCase();
+  }
+
+  // Capabilities (interactive loop)
+  const capabilities: CapabilityInput[] = [];
+  let addCap = (await prompt('Add a capability? (y/N)', 'N')).toLowerCase();
+  while (addCap === 'y' || addCap === 'yes') {
+    const capId = await prompt('  Capability ID');
+    const capName = await prompt('  Capability name');
+    const capDesc = await prompt('  Description (optional)');
+    capabilities.push({
+      id: capId,
+      name: capName,
+      description: capDesc || undefined,
+    });
+    if (capabilities.length >= 50) break;
+    addCap = (await prompt('Add another capability? (y/N)', 'N')).toLowerCase();
+  }
+
+  // Session limits (optional)
+  const addSession = (await prompt('Configure session limits? (y/N)', 'N')).toLowerCase();
+  let session: SessionInput | undefined;
+  if (addSession === 'y' || addSession === 'yes') {
+    const durationRaw = await prompt('  Session duration in seconds (optional)');
+    const tokenLimitRaw = await prompt('  Token limit per session (optional)');
+    const imageLimitRaw = await prompt('  Image limit per session (optional)');
+    const messageLimitRaw = await prompt('  Message limit per session (optional)');
+    const maxFileSizeRaw = await prompt('  Max file size in bytes (optional)');
+    const allowedFileTypesRaw = await prompt('  Allowed file types (comma-separated MIME types, optional)');
+
+    const s: SessionInput = {};
+    if (durationRaw) {
+      const n = Number(durationRaw);
+      if (Number.isFinite(n) && n > 0) s.duration = n;
+    }
+    if (tokenLimitRaw) {
+      const n = Number(tokenLimitRaw);
+      if (Number.isFinite(n) && n > 0 && Number.isInteger(n)) s.tokenLimit = n;
+    }
+    if (imageLimitRaw) {
+      const n = Number(imageLimitRaw);
+      if (Number.isFinite(n) && n > 0 && Number.isInteger(n)) s.imageLimit = n;
+    }
+    if (messageLimitRaw) {
+      const n = Number(messageLimitRaw);
+      if (Number.isFinite(n) && n > 0 && Number.isInteger(n)) s.messageLimit = n;
+    }
+    if (maxFileSizeRaw) {
+      const n = Number(maxFileSizeRaw);
+      if (Number.isFinite(n) && n > 0 && Number.isInteger(n)) s.maxFileSize = n;
+    }
+    if (allowedFileTypesRaw) {
+      const types = allowedFileTypesRaw.split(',').map(t => t.trim()).filter(Boolean);
+      if (types.length > 0) s.allowedFileTypes = types;
+    }
+
+    if (Object.keys(s).length > 0) {
+      const sessionErr = validateSessionInput(s);
+      if (sessionErr) throw new Error(sessionErr);
+      session = s;
+    }
+  }
+
+  const result: AgentProfileInput = { name, type, description };
+  if (category) result.category = category;
+  if (owner) result.owner = owner;
+  if (tags?.length) result.tags = tags;
+  if (website) result.website = website;
+  if (avatar) result.avatar = avatar;
+  if (protocols?.length) result.protocols = protocols;
+  if (endpoints.length) result.endpoints = endpoints;
+  if (capabilities.length) result.capabilities = capabilities;
+  if (session) result.session = session;
+
+  return result;
 }
 
 async function resolveServices(mode: FinalizeMode, services: ServiceInput[] | undefined, hooks?: FinalizeHooks): Promise<ServiceInput[]> {
@@ -114,24 +272,34 @@ async function resolveServices(mode: FinalizeMode, services: ServiceInput[] | un
   if (mode !== 'interactive') return [];
 
   const prompt = hooks?.prompt || defaultPrompt;
-  const add = (await prompt('Add a service now? (y/N)', 'N')).toLowerCase();
-  if (add !== 'y' && add !== 'yes') return [];
+  const result: ServiceInput[] = [];
 
-  const name = await prompt('Service name');
-  const description = await prompt('Service description', '');
-  const category = await prompt('Service category', 'general');
-  const priceRaw = await prompt('Price', '0');
-  const currency = await prompt('Currency', 'VRSCTEST');
-  const turnaround = await prompt('Turnaround', 'TBD');
+  let add = (await prompt('Add a service now? (y/N)', 'N')).toLowerCase();
+  while (add === 'y' || add === 'yes') {
+    const name = await prompt('  Service name');
+    if (!name) {
+      console.log('  Service name is required, skipping.');
+      break;
+    }
+    const description = await prompt('  Service description (optional)', '');
+    const category = await prompt('  Service category (optional)', 'general');
+    const priceRaw = await prompt('  Price in satoshis (optional)', '0');
+    const currency = await prompt('  Currency (optional)', 'VRSCTEST');
+    const turnaround = await prompt('  Turnaround time (optional, e.g. "24h", "instant")', 'TBD');
 
-  return [{
-    name,
-    description,
-    category,
-    price: Number(priceRaw) || 0,
-    currency,
-    turnaround,
-  }];
+    result.push({
+      name,
+      description: description || undefined,
+      category: category || undefined,
+      price: Number(priceRaw) || 0,
+      currency: currency || undefined,
+      turnaround: turnaround || undefined,
+    });
+
+    add = (await prompt('Add another service? (y/N)', 'N')).toLowerCase();
+  }
+
+  return result;
 }
 
 export async function finalizeOnboarding(params: FinalizeOnboardingParams): Promise<FinalizeState> {
