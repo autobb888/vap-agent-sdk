@@ -15,7 +15,7 @@
  */
 
 import { EventEmitter } from 'node:events';
-import { VAPClient, type VAPClientConfig } from './client/index.js';
+import { VAPClient } from './client/index.js';
 import { generateKeypair, keypairFromWIF, type Keypair } from './identity/keypair.js';
 import { signChallenge, signMessage } from './identity/signer.js';
 import { ChatClient, type IncomingMessage, type MessageHandler } from './chat/client.js';
@@ -28,6 +28,12 @@ import { generateAttestationPayload, signAttestation, type DeletionAttestation }
 import { recommendPrice, type PriceRecommendation } from './pricing/calculator.js';
 import type { JobCategory } from './pricing/tables.js';
 import { generateCanary, checkForCanaryLeak, type CanaryConfig } from './safety/canary.js';
+
+/** Default request timeout for raw fetch calls (ms) */
+const FETCH_TIMEOUT = 30_000;
+
+/** Minimum allowed polling interval (ms) */
+const MIN_POLL_INTERVAL = 5_000;
 
 export interface VAPAgentConfig {
   /** VAP API base URL */
@@ -46,7 +52,7 @@ export interface VAPAgentConfig {
 }
 
 export class VAPAgent extends EventEmitter {
-  readonly client: VAPClient;
+  private readonly _client: VAPClient;
   private keypair: Keypair | null = null;
   private identityName: string | null;
   private iAddress: string | null;
@@ -60,6 +66,8 @@ export class VAPAgent extends EventEmitter {
   private chatHandler: ((jobId: string, message: IncomingMessage) => void | Promise<void>) | null = null;
   private vapUrl: string;
   private canaryConfig: CanaryConfig | null = null;
+  private polling = false;
+  private seenJobIds = new Set<string>();
 
   constructor(config: VAPAgentConfig) {
     super();
@@ -68,13 +76,28 @@ export class VAPAgent extends EventEmitter {
       console.warn('[VAP Agent] ⚠️  WARNING: Using insecure HTTP connection. Keys and signatures will be sent in cleartext. Use HTTPS in production.');
     }
     this.vapUrl = config.vapUrl;
-    this.client = new VAPClient({ vapUrl: config.vapUrl });
+    this._client = new VAPClient({ vapUrl: config.vapUrl });
     this.wif = config.wif || null;
     this.identityName = config.identityName || null;
     this.iAddress = config.iAddress || null;
     this.handler = config.handler || null;
     this.jobConfig = config.jobConfig || { pollInterval: 30_000 };
     this.networkType = config.network || 'verustest';
+
+    // Prevent uncaught 'error' events from crashing the process
+    if (this.listenerCount('error') === 0) {
+      this.on('error', (err) => {
+        console.error('[VAP Agent] Unhandled error:', err instanceof Error ? err.message : err);
+      });
+    }
+  }
+
+  /**
+   * Read-only access to the underlying VAPClient.
+   * Use VAPAgent methods for operations that require canary checking or authentication.
+   */
+  get client(): VAPClient {
+    return this._client;
   }
 
   /**
@@ -89,28 +112,38 @@ export class VAPAgent extends EventEmitter {
 
   /**
    * Authenticate with the VAP platform and return the session cookie.
+   * Also sets the session token on the underlying VAPClient for subsequent requests.
    * Shared by registerWithVAP(), registerService(), and enableCanaryProtection().
    */
   private async login(): Promise<string> {
     if (!this.wif) throw new Error('WIF key required');
     if (!this.identityName) throw new Error('Identity name required');
 
-    const challengeRes = await this.client.getAuthChallenge();
+    const challengeRes = await this._client.getAuthChallenge();
     if (challengeRes.expiresAt && new Date(challengeRes.expiresAt).getTime() < Date.now()) {
       throw new Error('Auth challenge already expired — clock skew or stale response');
     }
 
     const signature = signMessage(this.wif, challengeRes.challenge, this.networkType);
 
-    const loginRes = await fetch(`${this.vapUrl}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        challengeId: challengeRes.challengeId,
-        verusId: this.identityName,
-        signature,
-      }),
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
+
+    let loginRes: Response;
+    try {
+      loginRes = await fetch(`${this.vapUrl}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          challengeId: challengeRes.challengeId,
+          verusId: this.identityName,
+          signature,
+        }),
+      });
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (!loginRes.ok) {
       let errMsg = loginRes.statusText;
@@ -118,7 +151,18 @@ export class VAPAgent extends EventEmitter {
       throw new Error(`Login failed: ${errMsg}`);
     }
 
-    return loginRes.headers.get('set-cookie') || '';
+    const cookies = loginRes.headers.get('set-cookie');
+    if (!cookies) {
+      throw new Error('Login succeeded but no session cookie was returned');
+    }
+
+    // Extract session token and set on VAPClient for subsequent API calls
+    const match = cookies.match(/verus_session=([^;]+)/);
+    if (match) {
+      this._client.setSessionToken(match[1]);
+    }
+
+    return cookies;
   }
 
   /**
@@ -142,15 +186,18 @@ export class VAPAgent extends EventEmitter {
 
     // Step 1: Request challenge
     console.log(`[VAP Agent] Requesting challenge...`);
-    const challengeResp = await this.client.onboard(name, kp.address, kp.pubkey);
-    
+    const challengeResp = await this._client.onboard(name, kp.address, kp.pubkey);
+
     if (challengeResp.status !== 'challenge') {
       throw new Error(`Unexpected response: ${JSON.stringify(challengeResp)}`);
     }
 
     // Step 2: Sign the challenge with our private key
-    const challenge = challengeResp.challenge!;
-    const token = challengeResp.token!;
+    if (!challengeResp.challenge || !challengeResp.token) {
+      throw new Error('Challenge response missing challenge or token');
+    }
+    const challenge = challengeResp.challenge;
+    const token = challengeResp.token;
     // Onboarding: Use IdentitySignature format with R-address as identity
     // (the local verification expects this format, not legacy signMessage)
     // Onboarding challenge uses R-address message verification path on server.
@@ -165,7 +212,7 @@ export class VAPAgent extends EventEmitter {
 
     // Poll for completion (blocks can take 1-15 minutes depending on network)
     console.log(`[VAP Agent] Waiting for block confirmation (this can take several minutes)...`);
-    let status = await this.client.onboardStatus(result.onboardId);
+    let status = await this._client.onboardStatus(result.onboardId);
     let attempts = 0;
     const maxAttempts = 120; // ~20 minutes at 10s intervals
 
@@ -194,7 +241,7 @@ export class VAPAgent extends EventEmitter {
       
       while ((!status.iAddress || status.iAddress === 'pending-lookup') && iAddressAttempts < maxIAddressAttempts) {
         await new Promise(r => setTimeout(r, 10_000));
-        status = await this.client.onboardStatus(result.onboardId);
+        status = await this._client.onboardStatus(result.onboardId);
         iAddressAttempts++;
         if (iAddressAttempts % 6 === 0) {
           console.log(`[VAP Agent] Still waiting for i-address... (${Math.round(iAddressAttempts * 10 / 60)}min elapsed)`);
@@ -206,7 +253,10 @@ export class VAPAgent extends EventEmitter {
       }
     }
 
-    this.identityName = status.identity!;
+    if (!status.identity) {
+      throw new Error('Server returned registered status without identity name');
+    }
+    this.identityName = status.identity;
     this.iAddress = status.iAddress!;
 
     console.log(`[VAP Agent] ✅ Registered: ${this.identityName} (${this.iAddress})`);
@@ -277,49 +327,42 @@ export class VAPAgent extends EventEmitter {
     // /v1/agents/register contract: canonical payload + verifymessage signature
     const regSignature = signMessage(this.wif, message, this.networkType);
 
-    const regRes = await fetch(`${this.vapUrl}/v1/agents/register`, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Cookie': cookies || '',
-      },
-      body: JSON.stringify({ ...payload, signature: regSignature }),
-    });
+    const regController = new AbortController();
+    const regTimer = setTimeout(() => regController.abort(), FETCH_TIMEOUT);
 
-    let regData: Record<string, any>;
-    try { regData = await regRes.json(); } catch { regData = {}; }
+    let regRes: Response;
+    try {
+      regRes = await fetch(`${this.vapUrl}/v1/agents/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cookie': cookies,
+        },
+        signal: regController.signal,
+        body: JSON.stringify({ ...payload, signature: regSignature }),
+      });
+    } finally {
+      clearTimeout(regTimer);
+    }
 
-    if (regRes.status === 409) {
+    let responseData: Record<string, unknown>;
+    try { responseData = await regRes.json(); } catch { responseData = {}; }
+
+    const isAlreadyRegistered = regRes.status === 409;
+
+    if (isAlreadyRegistered) {
       console.log(`[VAP Agent] Agent already registered`);
-      return { agentId: 'existing' };
+    } else if (!regRes.ok) {
+      const errMsg = (responseData.error as Record<string, unknown>)?.message || regRes.statusText;
+      throw new Error(`Registration failed: ${errMsg}`);
+    } else {
+      console.log(`[VAP Agent] ✅ Registered with VAP platform`);
+      this.emit('registeredWithVAP', { agentId: (responseData.data as Record<string, unknown>)?.agentId });
     }
 
-    if (!regRes.ok) {
-      throw new Error(`Registration failed: ${regData.error?.message || regRes.statusText}`);
-    }
-
-    console.log(`[VAP Agent] ✅ Registered with VAP platform`);
-    this.emit('registeredWithVAP', { agentId: regData.data?.agentId });
-
-    // Auto-register canary token (non-fatal on failure)
+    // Auto-register canary token (non-fatal on failure, runs even on 409 re-registration)
     if (agentData.canary !== false) {
-      try {
-        const canary = generateCanary();
-        const canaryRes = await fetch(`${this.vapUrl}/v1/me/canary`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Cookie': cookies || '' },
-          body: JSON.stringify(canary.registration),
-        });
-        if (canaryRes.ok) {
-          this.canaryConfig = canary;
-          this.emit('canary:registered', canary);
-          console.log('[VAP Agent] Canary token registered with SafeChat');
-        } else {
-          console.warn('[VAP Agent] Canary registration failed (non-fatal) — outbound leak detection disabled');
-        }
-      } catch (e) {
-        console.warn('[VAP Agent] Canary registration error (non-fatal):', (e as Error).message);
-      }
+      await this.registerCanaryToken(cookies);
     }
 
     // Build VDXF contentmultimap for on-chain publishing
@@ -344,7 +387,43 @@ export class VAPAgent extends EventEmitter {
 
     this.emit('vdxf:payload', { contentmultimap, updatePayload });
 
-    return { agentId: regData.data?.agentId };
+    const agentId = isAlreadyRegistered
+      ? 'existing'
+      : String((responseData.data as Record<string, unknown>)?.agentId ?? '');
+    return { agentId };
+  }
+
+  /**
+   * Register a canary token with SafeChat (non-fatal on failure).
+   */
+  private async registerCanaryToken(cookies: string): Promise<void> {
+    try {
+      const canary = generateCanary();
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
+
+      let canaryRes: Response;
+      try {
+        canaryRes = await fetch(`${this.vapUrl}/v1/me/canary`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Cookie': cookies },
+          signal: controller.signal,
+          body: JSON.stringify(canary.registration),
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+
+      if (canaryRes.ok) {
+        this.canaryConfig = canary;
+        this.emit('canary:registered', { active: true });
+        console.log('[VAP Agent] Canary token registered with SafeChat');
+      } else {
+        console.warn('[VAP Agent] Canary registration failed (non-fatal) — outbound leak detection disabled');
+      }
+    } catch (e) {
+      console.warn('[VAP Agent] Canary registration error (non-fatal):', (e as Error).message);
+    }
   }
 
   /**
@@ -367,24 +446,34 @@ export class VAPAgent extends EventEmitter {
 
     const cookies = await this.login();
 
-    const serviceRes = await fetch(`${this.vapUrl}/v1/me/services`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Cookie': cookies || '',
-      },
-      body: JSON.stringify(serviceData),
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
 
-    let serviceData2: Record<string, any>;
-    try { serviceData2 = await serviceRes.json(); } catch { serviceData2 = {}; }
+    let serviceRes: Response;
+    try {
+      serviceRes = await fetch(`${this.vapUrl}/v1/me/services`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cookie': cookies,
+        },
+        signal: controller.signal,
+        body: JSON.stringify(serviceData),
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    let result: Record<string, unknown>;
+    try { result = await serviceRes.json(); } catch { result = {}; }
 
     if (!serviceRes.ok) {
-      throw new Error(`Service registration failed: ${serviceData2.error?.message || serviceRes.statusText}`);
+      const errMsg = (result.error as Record<string, unknown>)?.message || serviceRes.statusText;
+      throw new Error(`Service registration failed: ${errMsg}`);
     }
 
     console.log(`[VAP Agent] ✅ Service registered: ${serviceData.name}`);
-    return { serviceId: serviceData2.data?.serviceId };
+    return { serviceId: String((result.data as Record<string, unknown>)?.serviceId ?? '') };
   }
 
   /**
@@ -400,16 +489,23 @@ export class VAPAgent extends EventEmitter {
    */
   async start(): Promise<void> {
     if (this.running) return;
-    this.running = true;
 
-    const interval = this.jobConfig.pollInterval || 30_000;
+    const interval = Math.max(this.jobConfig.pollInterval || 30_000, MIN_POLL_INTERVAL);
     console.log(`[VAP Agent] Listening for jobs (polling every ${interval / 1000}s)...`);
 
-    // Initial check
-    await this.checkForJobs();
+    // Initial check (non-fatal — still start polling even if first check fails)
+    try {
+      await this.checkForJobs();
+    } catch (err) {
+      this.emit('error', err instanceof Error ? err : new Error(String(err)));
+    }
 
-    // Start polling
-    this.pollTimer = setInterval(() => this.checkForJobs(), interval);
+    this.running = true;
+    this.pollTimer = setInterval(() => {
+      this.checkForJobs().catch((err) => {
+        this.emit('error', err instanceof Error ? err : new Error(String(err)));
+      });
+    }, interval);
     this.emit('started');
   }
 
@@ -433,13 +529,13 @@ export class VAPAgent extends EventEmitter {
    * Call after login (needs session token on client).
    */
   async connectChat(): Promise<void> {
-    if (!this.client.getSessionToken()) {
+    if (!this._client.getSessionToken()) {
       throw new Error('Must be logged in before connecting to chat');
     }
 
     this.chatClient = new ChatClient({
-      vapUrl: this.client.getBaseUrl(),
-      sessionToken: this.client.getSessionToken()!,
+      vapUrl: this._client.getBaseUrl(),
+      sessionToken: this._client.getSessionToken()!,
     });
 
     this.chatClient.onMessage((msg) => {
@@ -449,7 +545,12 @@ export class VAPAgent extends EventEmitter {
 
       this.emit('chat:message', msg);
       if (this.chatHandler) {
-        this.chatHandler(msg.jobId, msg);
+        const result = this.chatHandler(msg.jobId, msg);
+        if (result && typeof (result as Promise<void>).catch === 'function') {
+          (result as Promise<void>).catch((e) => {
+            this.emit('error', e instanceof Error ? e : new Error(String(e)));
+          });
+        }
       }
     });
 
@@ -458,8 +559,8 @@ export class VAPAgent extends EventEmitter {
 
     // Join rooms for any active jobs we're the seller on
     try {
-      const { jobs } = await this.client.getMyJobs({ status: 'accepted', role: 'seller' });
-      const inProgress = await this.client.getMyJobs({ status: 'in_progress', role: 'seller' });
+      const { jobs } = await this._client.getMyJobs({ status: 'accepted', role: 'seller' });
+      const inProgress = await this._client.getMyJobs({ status: 'in_progress', role: 'seller' });
       const allJobs = [...(jobs || []), ...(inProgress.jobs || [])];
       for (const job of allJobs) {
         this.chatClient.joinJob(job.id);
@@ -506,30 +607,39 @@ export class VAPAgent extends EventEmitter {
    * Check for new job requests and process them.
    */
   private async checkForJobs(): Promise<void> {
-    if (!this.handler) return;
+    if (!this.handler || this.polling) return;
+    this.polling = true;
 
     try {
-      const { jobs } = await this.client.getMyJobs({ status: 'requested', role: 'seller' });
+      const { jobs } = await this._client.getMyJobs({ status: 'requested', role: 'seller' });
 
       for (const job of jobs) {
+        // Skip jobs we've already seen/processed
+        if (this.seenJobIds.has(job.id)) continue;
+        this.seenJobIds.add(job.id);
+
         this.emit('job:requested', job);
 
         if (this.handler.onJobRequested) {
           const decision = await this.handler.onJobRequested(job);
 
           if (decision === 'accept') {
+            if (!this.wif || !this.iAddress) {
+              this.emit('error', new Error(`Cannot accept job ${job.id}: WIF key and i-address required`));
+              continue;
+            }
             try {
               const timestamp = Math.floor(Date.now() / 1000);
               const acceptMessage = `VAP-ACCEPT|Job:${job.jobHash}|Buyer:${job.buyerVerusId}|Amt:${job.amount} ${job.currency}|Ts:${timestamp}|I accept this job and commit to delivering the work.`;
-              const signature = signChallenge(this.wif!, acceptMessage, this.iAddress!, this.networkType);
-              await this.client.acceptJob(job.id, signature, timestamp);
+              const signature = signChallenge(this.wif, acceptMessage, this.iAddress, this.networkType);
+              await this._client.acceptJob(job.id, signature, timestamp);
               this.emit('job:accepted', job);
               // Auto-join chat room if chat is connected
               if (this.chatClient?.isConnected) {
                 this.chatClient.joinJob(job.id);
               }
             } catch (err) {
-              this.emit('error', new Error(`Failed to accept job ${job.id}: ${err}`));
+              this.emit('error', new Error(`Failed to accept job ${job.id}: ${err instanceof Error ? err.message : String(err)}`));
             }
           } else if (decision === 'reject') {
             this.emit('job:rejected', job);
@@ -538,7 +648,9 @@ export class VAPAgent extends EventEmitter {
         }
       }
     } catch (error) {
-      this.emit('error', error);
+      this.emit('error', error instanceof Error ? error : new Error(String(error)));
+    } finally {
+      this.polling = false;
     }
   }
 
@@ -564,27 +676,38 @@ export class VAPAgent extends EventEmitter {
   /**
    * Enable canary protection standalone (after initial registration, or to re-enable with a new token).
    * Generates a new canary token and registers it with SafeChat.
+   * Returns the systemPromptInsert for embedding; the raw token is kept internal.
    */
-  async enableCanaryProtection(): Promise<CanaryConfig> {
+  async enableCanaryProtection(): Promise<{ active: boolean; systemPromptInsert: string }> {
     const cookies = await this.login();
     const canary = generateCanary();
 
-    const res = await fetch(`${this.vapUrl}/v1/me/canary`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Cookie': cookies },
-      body: JSON.stringify(canary.registration),
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
 
-    let data: Record<string, any>;
+    let res: Response;
+    try {
+      res = await fetch(`${this.vapUrl}/v1/me/canary`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Cookie': cookies },
+        signal: controller.signal,
+        body: JSON.stringify(canary.registration),
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    let data: Record<string, unknown>;
     try { data = await res.json(); } catch { data = {}; }
 
     if (!res.ok) {
-      throw new Error(`Canary registration failed: ${data.error?.message || res.statusText}`);
+      const errMsg = (data.error as Record<string, unknown>)?.message || res.statusText;
+      throw new Error(`Canary registration failed: ${errMsg}`);
     }
 
     this.canaryConfig = canary;
-    this.emit('canary:registered', canary);
-    return canary;
+    this.emit('canary:registered', { active: true });
+    return { active: true, systemPromptInsert: canary.systemPromptInsert };
   }
 
   /**
@@ -598,9 +721,9 @@ export class VAPAgent extends EventEmitter {
     return systemPrompt + '\n' + this.canaryConfig.systemPromptInsert;
   }
 
-  /** Get the current canary config (null if not initialized) */
-  get canary(): CanaryConfig | null {
-    return this.canaryConfig;
+  /** Whether canary protection is currently active */
+  get canaryActive(): boolean {
+    return this.canaryConfig !== null;
   }
 
   // ------------------------------------------
@@ -615,7 +738,7 @@ export class VAPAgent extends EventEmitter {
    */
   async setPrivacyTier(tier: PrivacyTier): Promise<void> {
     this.privacyTier = tier;
-    await this.client.updateAgentProfile({ privacyTier: tier });
+    await this._client.updateAgentProfile({ privacyTier: tier });
     this.emit('privacy:updated', tier);
   }
 
@@ -670,7 +793,7 @@ export class VAPAgent extends EventEmitter {
     const attestation = signAttestation(payload, this.wif, network);
 
     // Submit to platform
-    await this.client.submitAttestation(attestation);
+    await this._client.submitAttestation(attestation);
     this.emit('attestation:submitted', attestation);
 
     return attestation;

@@ -122,15 +122,15 @@ await agent.registerWithVAP({
 **Standalone enable** (after registration, or to re-register with a new token):
 
 ```javascript
-const canary = await agent.enableCanaryProtection();
-console.log(canary.token); // the canary token string
+const result = await agent.enableCanaryProtection();
+console.log(result.systemPromptInsert); // embed this in your system prompt
 ```
 
 **Check canary status:**
 
 ```javascript
-if (agent.canary) {
-  console.log('Canary active:', agent.canary.token);
+if (agent.canaryActive) {
+  console.log('Canary protection is active');
 }
 ```
 
@@ -530,8 +530,10 @@ Prove you destroyed job data by signing an on-chain attestation:
 const attestation = await agent.attestDeletion(
   'job-123',
   'container-abc456',
-  ['/data/job-123', '/tmp/workspace'],
-  'container-destroy+volume-rm',
+  {
+    dataVolumes: ['/data/job-123', '/tmp/workspace'],
+    deletionMethod: 'container-destroy+volume-rm',
+  },
 );
 ```
 

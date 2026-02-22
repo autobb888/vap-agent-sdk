@@ -62,7 +62,16 @@ export class VAPClient {
         signal: controller.signal,
       });
 
-      const data = await response.json() as Record<string, unknown>;
+      let data: Record<string, unknown>;
+      try {
+        data = await response.json() as Record<string, unknown>;
+      } catch {
+        throw new VAPError(
+          `Non-JSON response from ${method} ${path} (HTTP ${response.status})`,
+          'PARSE_ERROR',
+          response.status,
+        );
+      }
 
       if (!response.ok) {
         const error = (data?.error ?? {}) as Record<string, unknown>;
@@ -85,14 +94,13 @@ export class VAPClient {
 
   /** Get authentication challenge for login */
   async getAuthChallenge(): Promise<{ challengeId: string; challenge: string; expiresAt: string }> {
-    const response = await fetch(`${this.baseUrl}/auth/challenge`);
-    let data: Record<string, unknown>;
-    try {
-      data = await response.json() as Record<string, unknown>;
-    } catch {
-      throw new VAPError('Invalid JSON in auth challenge response', 'PARSE_ERROR', response.status);
+    const res = await this.request<{ data: { challengeId: string; challenge: string; expiresAt: string } }>(
+      'GET', '/auth/challenge'
+    );
+    if (!res.data) {
+      throw new VAPError('Invalid auth challenge response: missing data', 'PARSE_ERROR', 500);
     }
-    return data.data as { challengeId: string; challenge: string; expiresAt: string };
+    return res.data;
   }
 
   // ------------------------------------------
@@ -224,14 +232,14 @@ export class VAPClient {
   // Agent/Service endpoints
   // ------------------------------------------
 
-  /** Register agent profile */
+  /** Register agent profile (signed payload, requires cookie auth) */
   async registerAgent(data: RegisterAgentData): Promise<{ agentId: string }> {
-    return this.request('POST', '/v1/register', data);
+    return this.request('POST', '/v1/agents/register', data);
   }
 
-  /** Register a service */
+  /** Register a service (requires cookie auth) */
   async registerService(data: RegisterServiceData): Promise<{ serviceId: string }> {
-    return this.request('POST', '/v1/my-services', data);
+    return this.request('POST', '/v1/me/services', data);
   }
 
   /** Get jobs for authenticated identity */
@@ -359,10 +367,10 @@ export class VAPClient {
     const query = new URLSearchParams();
     if (params.model) query.set('model', params.model);
     if (params.category) query.set('category', params.category);
-    if (params.inputTokens) query.set('inputTokens', String(params.inputTokens));
-    if (params.outputTokens) query.set('outputTokens', String(params.outputTokens));
+    if (params.inputTokens != null) query.set('inputTokens', String(params.inputTokens));
+    if (params.outputTokens != null) query.set('outputTokens', String(params.outputTokens));
     if (params.privacyTier) query.set('privacyTier', params.privacyTier);
-    if (params.vrscUsdRate) query.set('vrscUsdRate', String(params.vrscUsdRate));
+    if (params.vrscUsdRate != null) query.set('vrscUsdRate', String(params.vrscUsdRate));
     const qs = query.toString();
     return this.request('GET', `/v1/pricing/recommend${qs ? `?${qs}` : ''}`);
   }
@@ -481,6 +489,7 @@ export interface Job {
   description: string;
   amount: number;
   currency: string;
+  deadline?: string;
   safechatEnabled?: boolean;
   payment?: {
     terms: string;
@@ -513,5 +522,6 @@ export interface ChatMessage {
   jobId: string;
   senderVerusId: string;
   content: string;
+  type?: 'text' | 'file' | 'system';
   createdAt: string;
 }

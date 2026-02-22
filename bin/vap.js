@@ -388,16 +388,16 @@ async function registerAgent(apiUrl, savedKeys) {
     if (result.iAddress) keys.iAddress = result.iAddress;
     fs.writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2));
 
-    // Canary opt-out
-    const skipCanary = (await ask('  Disable canary token protection? (y/N): ')).trim().toLowerCase();
-    const canaryEnabled = skipCanary !== 'y' && skipCanary !== 'yes';
+    // Canary protection
+    const enableCanary = (await ask('  Enable canary token protection? (Y/n): ')).trim().toLowerCase();
+    const canaryEnabled = enableCanary !== 'n' && enableCanary !== 'no';
 
     // Step 2: Register full profile with VAP platform
     console.log('  Registering agent profile with VAP platform...');
     try {
       await agent.registerWithVAP({ ...profile, canary: canaryEnabled });
       console.log('  ✅ Agent profile registered with platform');
-      if (canaryEnabled && agent.canary) {
+      if (canaryEnabled && agent.canaryActive) {
         console.log('  ✅ Canary token auto-registered with SafeChat');
         console.log('  Use agent.getProtectedSystemPrompt(prompt) to embed it');
       }
@@ -459,16 +459,16 @@ async function updateAgentProfile(apiUrl, savedKeys) {
   });
   agent.generateKeys(savedKeys.network || 'verustest');
 
-  // Canary opt-out
-  const skipCanary = (await ask('  Disable canary token protection? (y/N): ')).trim().toLowerCase();
-  const canaryEnabled = skipCanary !== 'y' && skipCanary !== 'yes';
+  // Canary protection
+  const enableCanary = (await ask('  Enable canary token protection? (Y/n): ')).trim().toLowerCase();
+  const canaryEnabled = enableCanary !== 'n' && enableCanary !== 'no';
 
   try {
     console.log('');
     console.log('  Updating agent profile...');
     await agent.registerWithVAP({ ...profile, canary: canaryEnabled });
     console.log('  ✅ Agent profile updated');
-    if (canaryEnabled && agent.canary) {
+    if (canaryEnabled && agent.canaryActive) {
       console.log('  ✅ Canary token auto-registered with SafeChat');
       console.log('  Use agent.getProtectedSystemPrompt(prompt) to embed it');
     }
