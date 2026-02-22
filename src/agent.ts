@@ -27,6 +27,7 @@ import type { PrivacyTier } from './privacy/tiers.js';
 import { generateAttestationPayload, signAttestation, type DeletionAttestation } from './privacy/attestation.js';
 import { recommendPrice, type PriceRecommendation } from './pricing/calculator.js';
 import type { JobCategory } from './pricing/tables.js';
+import { generateCanary, checkForCanaryLeak, type CanaryConfig } from './safety/canary.js';
 
 export interface VAPAgentConfig {
   /** VAP API base URL */
@@ -58,6 +59,7 @@ export class VAPAgent extends EventEmitter {
   private chatClient: ChatClient | null = null;
   private chatHandler: ((jobId: string, message: IncomingMessage) => void | Promise<void>) | null = null;
   private vapUrl: string;
+  private canaryConfig: CanaryConfig | null = null;
 
   constructor(config: VAPAgentConfig) {
     super();
@@ -83,6 +85,40 @@ export class VAPAgent extends EventEmitter {
     this.keypair = generateKeypair(network);
     this.wif = this.keypair.wif;
     return this.keypair;
+  }
+
+  /**
+   * Authenticate with the VAP platform and return the session cookie.
+   * Shared by registerWithVAP(), registerService(), and enableCanaryProtection().
+   */
+  private async login(): Promise<string> {
+    if (!this.wif) throw new Error('WIF key required');
+    if (!this.identityName) throw new Error('Identity name required');
+
+    const challengeRes = await this.client.getAuthChallenge();
+    if (challengeRes.expiresAt && new Date(challengeRes.expiresAt).getTime() < Date.now()) {
+      throw new Error('Auth challenge already expired — clock skew or stale response');
+    }
+
+    const signature = signMessage(this.wif, challengeRes.challenge, this.networkType);
+
+    const loginRes = await fetch(`${this.vapUrl}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        challengeId: challengeRes.challengeId,
+        verusId: this.identityName,
+        signature,
+      }),
+    });
+
+    if (!loginRes.ok) {
+      let errMsg = loginRes.statusText;
+      try { const err = await loginRes.json(); errMsg = err.error?.message || errMsg; } catch { /* non-JSON response */ }
+      throw new Error(`Login failed: ${errMsg}`);
+    }
+
+    return loginRes.headers.get('set-cookie') || '';
   }
 
   /**
@@ -199,6 +235,8 @@ export class VAPAgent extends EventEmitter {
     endpoints?: { url: string; protocol: string; public?: boolean; description?: string }[];
     capabilities?: { id: string; name: string; description?: string; protocol?: string; endpoint?: string; public?: boolean; pricing?: { amount: number; currency: string; per?: string }; rateLimit?: { requests: number; period: string } }[];
     session?: SessionInput;
+    /** Set to false to disable automatic canary token registration (default: true) */
+    canary?: boolean;
   }): Promise<{ agentId: string }> {
     if (!this.wif) {
       throw new Error('WIF key required for registration');
@@ -219,30 +257,7 @@ export class VAPAgent extends EventEmitter {
 
     // Step 1: Login
     console.log(`[VAP Agent] Logging in...`);
-    const challengeRes = await this.client.getAuthChallenge();
-    if (challengeRes.expiresAt && new Date(challengeRes.expiresAt).getTime() < Date.now()) {
-      throw new Error('Auth challenge already expired — clock skew or stale response');
-    }
-    // /auth/login uses verifymessage-compatible signatures
-    const signature = signMessage(this.wif, challengeRes.challenge, this.networkType);
-    
-    const loginRes = await fetch(`${this.vapUrl}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        challengeId: challengeRes.challengeId,
-        verusId: this.identityName,
-        signature,
-      }),
-    });
-
-    if (!loginRes.ok) {
-      let errMsg = loginRes.statusText;
-      try { const err = await loginRes.json(); errMsg = err.error?.message || errMsg; } catch { /* non-JSON response */ }
-      throw new Error(`Login failed: ${errMsg}`);
-    }
-
-    const cookies = loginRes.headers.get('set-cookie');
+    const cookies = await this.login();
     console.log(`[VAP Agent] ✅ Logged in`);
 
     // Step 2: Register agent with signed payload
@@ -285,6 +300,27 @@ export class VAPAgent extends EventEmitter {
 
     console.log(`[VAP Agent] ✅ Registered with VAP platform`);
     this.emit('registeredWithVAP', { agentId: regData.data?.agentId });
+
+    // Auto-register canary token (non-fatal on failure)
+    if (agentData.canary !== false) {
+      try {
+        const canary = generateCanary();
+        const canaryRes = await fetch(`${this.vapUrl}/v1/me/canary`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Cookie': cookies || '' },
+          body: JSON.stringify(canary.registration),
+        });
+        if (canaryRes.ok) {
+          this.canaryConfig = canary;
+          this.emit('canary:registered', canary);
+          console.log('[VAP Agent] Canary token registered with SafeChat');
+        } else {
+          console.warn('[VAP Agent] Canary registration failed (non-fatal) — outbound leak detection disabled');
+        }
+      } catch (e) {
+        console.warn('[VAP Agent] Canary registration error (non-fatal):', (e as Error).message);
+      }
+    }
 
     // Build VDXF contentmultimap for on-chain publishing
     const profile = {
@@ -329,27 +365,7 @@ export class VAPAgent extends EventEmitter {
 
     console.log(`[VAP Agent] Registering service: ${serviceData.name}...`);
 
-    // Need to be logged in - get fresh session
-    const iAddress = this.iAddress || this.keypair?.address;
-    if (!this.wif || !iAddress) {
-      throw new Error('WIF key required');
-    }
-
-    const challengeRes = await this.client.getAuthChallenge();
-    // /auth/login uses verifymessage-compatible signatures
-    const signature = signMessage(this.wif, challengeRes.challenge, this.networkType);
-    
-    const loginRes = await fetch(`${this.vapUrl}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        challengeId: challengeRes.challengeId,
-        verusId: this.identityName,
-        signature,
-      }),
-    });
-
-    const cookies = loginRes.headers.get('set-cookie');
+    const cookies = await this.login();
 
     const serviceRes = await fetch(`${this.vapUrl}/v1/me/services`, {
       method: 'POST',
@@ -471,6 +487,11 @@ export class VAPAgent extends EventEmitter {
     if (!this.chatClient?.isConnected) {
       throw new Error('Chat not connected');
     }
+    if (this.canaryConfig && checkForCanaryLeak(content, this.canaryConfig.token)) {
+      throw new Error(
+        'Canary token detected in outbound message — potential prompt injection leak. Message blocked.'
+      );
+    }
     this.chatClient.sendMessage(jobId, content);
   }
 
@@ -534,6 +555,52 @@ export class VAPAgent extends EventEmitter {
   /** Check if agent is currently listening for jobs */
   get isRunning(): boolean {
     return this.running;
+  }
+
+  // ------------------------------------------
+  // Canary Protection
+  // ------------------------------------------
+
+  /**
+   * Enable canary protection standalone (after initial registration, or to re-enable with a new token).
+   * Generates a new canary token and registers it with SafeChat.
+   */
+  async enableCanaryProtection(): Promise<CanaryConfig> {
+    const cookies = await this.login();
+    const canary = generateCanary();
+
+    const res = await fetch(`${this.vapUrl}/v1/me/canary`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Cookie': cookies },
+      body: JSON.stringify(canary.registration),
+    });
+
+    let data: Record<string, any>;
+    try { data = await res.json(); } catch { data = {}; }
+
+    if (!res.ok) {
+      throw new Error(`Canary registration failed: ${data.error?.message || res.statusText}`);
+    }
+
+    this.canaryConfig = canary;
+    this.emit('canary:registered', canary);
+    return canary;
+  }
+
+  /**
+   * Wrap a system prompt with the agent's canary token.
+   * The canary must be initialized first (via registerWithVAP() or enableCanaryProtection()).
+   */
+  getProtectedSystemPrompt(systemPrompt: string): string {
+    if (!this.canaryConfig) {
+      throw new Error('Canary not initialized — call registerWithVAP() or enableCanaryProtection() first');
+    }
+    return systemPrompt + '\n' + this.canaryConfig.systemPromptInsert;
+  }
+
+  /** Get the current canary config (null if not initialized) */
+  get canary(): CanaryConfig | null {
+    return this.canaryConfig;
   }
 
   // ------------------------------------------

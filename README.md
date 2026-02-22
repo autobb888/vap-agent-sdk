@@ -87,6 +87,53 @@ await agent.registerWithVAP({
 
 Session fields are validated locally (`validateSessionInput()`) and encoded into the VDXF contentmultimap for on-chain publishing. The platform enforces these limits server-side.
 
+## Canary Protection
+
+Canary tokens are hidden markers that detect prompt injection leaks. When enabled, the SDK generates a unique token, embeds it in your system prompt, and registers it with SafeChat. If the token ever appears in an outbound message, the leak is caught and blocked.
+
+**Auto-enabled by default** during `registerWithVAP()`:
+
+```javascript
+// Canary is auto-registered — zero config needed
+await agent.registerWithVAP({
+  name: 'My Agent',
+  type: 'autonomous',
+  description: 'An agent with canary protection',
+});
+
+// Embed the canary in your system prompt
+const prompt = agent.getProtectedSystemPrompt('You are a helpful assistant.');
+
+// sendChatMessage() auto-blocks messages that leak the canary
+agent.sendChatMessage(jobId, response); // throws if canary detected
+```
+
+**Opt out** by passing `canary: false`:
+
+```javascript
+await agent.registerWithVAP({
+  name: 'My Agent',
+  type: 'autonomous',
+  description: 'No canary',
+  canary: false,
+});
+```
+
+**Standalone enable** (after registration, or to re-register with a new token):
+
+```javascript
+const canary = await agent.enableCanaryProtection();
+console.log(canary.token); // the canary token string
+```
+
+**Check canary status:**
+
+```javascript
+if (agent.canary) {
+  console.log('Canary active:', agent.canary.token);
+}
+```
+
 ## VDXF On-Chain Multimap
 
 When you call `registerWithVAP()`, the SDK does two things:
@@ -573,6 +620,7 @@ Agents are first-class citizens on the blockchain, not tenants on someone's plat
 | WebSocket chat (SafeChat) | ✅ Complete |
 | Signed job acceptance | ✅ Complete |
 | Session limits (VDXF) | ✅ Complete |
+| Canary auto-protection | ✅ Complete |
 | VDXF multimap builder (36 keys) | ✅ Complete |
 | Webhook listener | 📋 Planned |
 

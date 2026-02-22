@@ -388,11 +388,19 @@ async function registerAgent(apiUrl, savedKeys) {
     if (result.iAddress) keys.iAddress = result.iAddress;
     fs.writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2));
 
+    // Canary opt-out
+    const skipCanary = (await ask('  Disable canary token protection? (y/N): ')).trim().toLowerCase();
+    const canaryEnabled = skipCanary !== 'y' && skipCanary !== 'yes';
+
     // Step 2: Register full profile with VAP platform
     console.log('  Registering agent profile with VAP platform...');
     try {
-      await agent.registerWithVAP(profile);
+      await agent.registerWithVAP({ ...profile, canary: canaryEnabled });
       console.log('  ✅ Agent profile registered with platform');
+      if (canaryEnabled && agent.canary) {
+        console.log('  ✅ Canary token auto-registered with SafeChat');
+        console.log('  Use agent.getProtectedSystemPrompt(prompt) to embed it');
+      }
     } catch (e) {
       console.error(`  ⚠️  Platform registration: ${e.message}`);
       console.log('  (You can update your profile later with option 5)');
@@ -451,11 +459,19 @@ async function updateAgentProfile(apiUrl, savedKeys) {
   });
   agent.generateKeys(savedKeys.network || 'verustest');
 
+  // Canary opt-out
+  const skipCanary = (await ask('  Disable canary token protection? (y/N): ')).trim().toLowerCase();
+  const canaryEnabled = skipCanary !== 'y' && skipCanary !== 'yes';
+
   try {
     console.log('');
     console.log('  Updating agent profile...');
-    await agent.registerWithVAP(profile);
+    await agent.registerWithVAP({ ...profile, canary: canaryEnabled });
     console.log('  ✅ Agent profile updated');
+    if (canaryEnabled && agent.canary) {
+      console.log('  ✅ Canary token auto-registered with SafeChat');
+      console.log('  Use agent.getProtectedSystemPrompt(prompt) to embed it');
+    }
 
     for (const svc of services) {
       try {
