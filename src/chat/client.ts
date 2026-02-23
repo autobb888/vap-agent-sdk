@@ -36,13 +36,15 @@ function safeCallHandler(handler: MessageHandler, msg: IncomingMessage): void {
   }
 }
 
+/** Maximum outbound message size (64 KB) */
+const MAX_MESSAGE_SIZE = 64 * 1024;
+
 export class ChatClient {
   private socket: Socket | null = null;
   private config: ChatClientConfig;
   private joinedRooms = new Set<string>();
   private messageHandlers = new Map<string, MessageHandler[]>(); // jobId -> handlers
   private globalHandler: MessageHandler | null = null;
-  private connected = false;
 
   constructor(config: ChatClientConfig) {
     this.config = config;
@@ -58,7 +60,6 @@ export class ChatClient {
       this.socket.removeAllListeners();
       this.socket.disconnect();
       this.socket = null;
-      this.connected = false;
     }
 
     // Step 1: Get a one-time chat token via REST API
@@ -80,6 +81,8 @@ export class ChatClient {
 
     // Step 2: Connect Socket.IO with the token
     return new Promise((resolve, reject) => {
+      let resolved = false;
+
       this.socket = io(this.config.vapUrl, {
         path: '/ws',
         auth: { token: chatToken },
@@ -94,40 +97,44 @@ export class ChatClient {
 
       // Timeout if connection takes too long
       const timeoutId = setTimeout(() => {
-        if (!this.connected) {
+        if (!resolved) {
+          resolved = true;
           this.socket?.disconnect();
           reject(new Error('Chat connection timeout'));
         }
       }, 10000);
 
       this.socket.on('connect', () => {
-        clearTimeout(timeoutId);
-        this.connected = true;
-        // Re-join any rooms we were in
-        for (const jobId of this.joinedRooms) {
-          this.socket?.emit('join_job', { jobId });
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeoutId);
+          // Re-join any rooms we were in
+          for (const jobId of this.joinedRooms) {
+            this.socket?.emit('join_job', { jobId });
+          }
+          resolve();
         }
-        resolve();
       });
 
       this.socket.on('disconnect', (reason: string) => {
-        this.connected = false;
         console.log(`[CHAT] Disconnected: ${reason}`);
       });
 
       this.socket.on('connect_error', (err: Error) => {
         console.error(`[CHAT] Connection error: ${err.message}`);
-        if (!this.connected) {
+        if (!resolved) {
+          resolved = true;
           clearTimeout(timeoutId);
           reject(err);
         }
       });
 
       this.socket.on('message', (msg: IncomingMessage) => {
-        // Route to job-specific handlers
+        // Snapshot handlers to avoid mutation during iteration
         const handlers = this.messageHandlers.get(msg.jobId);
         if (handlers) {
-          for (const h of handlers) {
+          const snapshot = [...handlers];
+          for (const h of snapshot) {
             safeCallHandler(h, msg);
           }
         }
@@ -178,6 +185,9 @@ export class ChatClient {
   sendMessage(jobId: string, content: string, signature?: string): void {
     if (!this.socket?.connected) {
       throw new Error('Not connected to chat');
+    }
+    if (content.length > MAX_MESSAGE_SIZE) {
+      throw new Error(`Message exceeds maximum size of ${MAX_MESSAGE_SIZE} bytes`);
     }
     this.socket.emit('message', { jobId, content, signature });
   }
@@ -232,7 +242,6 @@ export class ChatClient {
       this.socket.disconnect();
     }
     this.socket = null;
-    this.connected = false;
     this.joinedRooms.clear();
     this.messageHandlers.clear();
     this.globalHandler = null;

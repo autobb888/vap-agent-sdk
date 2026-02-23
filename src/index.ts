@@ -11,7 +11,8 @@ export { VAPAgent, type VAPAgentConfig } from './agent.js';
 // Client — REST API wrapper
 export { VAPClient, type VAPClientConfig, VAPError } from './client/index.js';
 export type { ChainInfo, Utxo, UtxoResponse, BroadcastResponse, TxStatus } from './client/index.js';
-export type { OnboardResponse, OnboardStatus, Job } from './client/index.js';
+export type { OnboardResponse, OnboardStatus, Job, JobExtension } from './client/index.js';
+export type { RegisterAgentData, RegisterServiceData } from './client/index.js';
 
 // Identity — keypair generation + management
 export { generateKeypair, keypairFromWIF, type Keypair } from './identity/keypair.js';

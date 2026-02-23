@@ -30,6 +30,10 @@ export class VAPClient {
     this.sessionToken = token;
   }
 
+  clearSessionToken(): void {
+    this.sessionToken = null;
+  }
+
   getSessionToken(): string | null {
     return this.sessionToken;
   }
@@ -74,6 +78,10 @@ export class VAPClient {
       }
 
       if (!response.ok) {
+        // Invalidate stale session on auth errors
+        if (response.status === 401 || response.status === 403) {
+          this.sessionToken = null;
+        }
         const error = (data?.error ?? {}) as Record<string, unknown>;
         throw new VAPError(
           (error.message as string) || `HTTP ${response.status}`,
@@ -124,7 +132,7 @@ export class VAPClient {
 
   /** Get transaction status */
   async getTxStatus(txid: string): Promise<TxStatus> {
-    return this.request('GET', `/v1/tx/status/${txid}`);
+    return this.request('GET', `/v1/tx/status/${encodeURIComponent(txid)}`);
   }
 
   // ------------------------------------------
@@ -154,7 +162,7 @@ export class VAPClient {
     identityAddress: string,
     network: 'verus' | 'verustest' = 'verustest'
   ): Promise<OnboardStatus> {
-    const { generateKeypair, keypairFromWIF } = await import('../identity/keypair.js');
+    const { keypairFromWIF } = await import('../identity/keypair.js');
     
     // Get keypair info from WIF
     const keypair = keypairFromWIF(wif, network);
@@ -225,7 +233,7 @@ export class VAPClient {
 
   /** Check onboarding status */
   async onboardStatus(id: string): Promise<OnboardStatus> {
-    return this.request('GET', `/v1/onboard/status/${id}`);
+    return this.request('GET', `/v1/onboard/status/${encodeURIComponent(id)}`);
   }
 
   // ------------------------------------------
@@ -253,22 +261,18 @@ export class VAPClient {
 
   /** Accept a job */
   async acceptJob(jobId: string, signature: string, timestamp: number): Promise<{ status: string }> {
-    return this.request('POST', `/v1/jobs/${jobId}/accept`, { signature, timestamp });
+    return this.request('POST', `/v1/jobs/${encodeURIComponent(jobId)}/accept`, { signature, timestamp });
   }
 
   /** Deliver a job */
   async deliverJob(jobId: string, signature: string, message: string, content?: string): Promise<{ status: string }> {
-    return this.request('POST', `/v1/jobs/${jobId}/deliver`, { signature, message, content });
+    return this.request('POST', `/v1/jobs/${encodeURIComponent(jobId)}/deliver`, { signature, message, content });
   }
 
   /** Get job details */
   async getJob(jobId: string): Promise<Job> {
-    return this.request('GET', `/v1/jobs/${jobId}`);
+    return this.request('GET', `/v1/jobs/${encodeURIComponent(jobId)}`);
   }
-
-  // ------------------------------------------
-  // Chat endpoints
-  // ------------------------------------------
 
   // ------------------------------------------
   // Safety endpoints
@@ -291,12 +295,12 @@ export class VAPClient {
   /** Get chat messages for a job */
   async getChatMessages(jobId: string, limit?: number): Promise<{ messages: ChatMessage[] }> {
     const qs = limit ? `?limit=${limit}` : '';
-    return this.request('GET', `/v1/chat/${jobId}/messages${qs}`);
+    return this.request('GET', `/v1/chat/${encodeURIComponent(jobId)}/messages${qs}`);
   }
 
   /** Send a chat message */
   async sendChatMessage(jobId: string, content: string): Promise<{ messageId: string }> {
-    return this.request('POST', `/v1/chat/${jobId}/messages`, { content });
+    return this.request('POST', `/v1/chat/${encodeURIComponent(jobId)}/messages`, { content });
   }
 
   // ------------------------------------------
@@ -314,27 +318,27 @@ export class VAPClient {
 
   /** Request a session extension (additional payment for more work) */
   async requestExtension(jobId: string, amount: number, reason?: string): Promise<{ data: JobExtension }> {
-    return this.request('POST', `/v1/jobs/${jobId}/extensions`, { amount, reason });
+    return this.request('POST', `/v1/jobs/${encodeURIComponent(jobId)}/extensions`, { amount, reason });
   }
 
   /** Get extensions for a job */
   async getExtensions(jobId: string): Promise<{ data: JobExtension[] }> {
-    return this.request('GET', `/v1/jobs/${jobId}/extensions`);
+    return this.request('GET', `/v1/jobs/${encodeURIComponent(jobId)}/extensions`);
   }
 
   /** Approve an extension request */
   async approveExtension(jobId: string, extensionId: string): Promise<{ data: { id: string; status: string } }> {
-    return this.request('POST', `/v1/jobs/${jobId}/extensions/${extensionId}/approve`, {});
+    return this.request('POST', `/v1/jobs/${encodeURIComponent(jobId)}/extensions/${encodeURIComponent(extensionId)}/approve`, {});
   }
 
   /** Reject an extension request */
   async rejectExtension(jobId: string, extensionId: string): Promise<{ data: { id: string; status: string } }> {
-    return this.request('POST', `/v1/jobs/${jobId}/extensions/${extensionId}/reject`, {});
+    return this.request('POST', `/v1/jobs/${encodeURIComponent(jobId)}/extensions/${encodeURIComponent(extensionId)}/reject`, {});
   }
 
   /** Submit extension payment txids */
   async payExtension(jobId: string, extensionId: string, agentTxid?: string, feeTxid?: string): Promise<{ data: { id: string; status: string } }> {
-    return this.request('POST', `/v1/jobs/${jobId}/extensions/${extensionId}/payment`, { agentTxid, feeTxid });
+    return this.request('POST', `/v1/jobs/${encodeURIComponent(jobId)}/extensions/${encodeURIComponent(extensionId)}/payment`, { agentTxid, feeTxid });
   }
 
   // ------------------------------------------
@@ -348,7 +352,7 @@ export class VAPClient {
 
   /** Get attestations for an agent */
   async getAttestations(agentId: string): Promise<{ attestations: DeletionAttestation[] }> {
-    return this.request('GET', `/v1/agents/${agentId}/attestations`);
+    return this.request('GET', `/v1/agents/${encodeURIComponent(agentId)}/attestations`);
   }
 
   // ------------------------------------------
@@ -436,7 +440,7 @@ export interface TxStatus {
 }
 
 export interface OnboardResponse {
-  status: string;
+  status: 'challenge' | 'pending' | 'confirming' | 'registered' | 'failed';
   onboardId: string;
   identity?: string;
   iAddress?: string;

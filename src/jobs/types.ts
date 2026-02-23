@@ -54,4 +54,7 @@ export interface JobHandler {
 
   /** Called when a job is disputed */
   onJobDisputed?(job: Job, reason: string): Promise<void>;
+
+  /** Called when a job is cancelled */
+  onJobCancelled?(job: Job, reason?: string): Promise<void>;
 }

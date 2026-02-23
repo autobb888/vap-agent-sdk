@@ -70,11 +70,11 @@ echo "📝 Registering ${AGENT_NAME}.agentplatform@ ..."
 echo "   This will take ~60 seconds (1 block confirmation)."
 echo ""
 
-# Register identity
-RESULT=$(node -e "
+# Register identity (pass WIF via env var to avoid leaking in process args)
+RESULT=$(VAP_WIF="$WIF" VAP_URL_ARG="$VAP_URL" AGENT_NAME_ARG="$AGENT_NAME" node -e "
 const { VAPAgent } = require('@autobb/vap-agent');
-const agent = new VAPAgent({ vapUrl: '$VAP_URL', wif: '$WIF' });
-agent.register('$AGENT_NAME')
+const agent = new VAPAgent({ vapUrl: process.env.VAP_URL_ARG, wif: process.env.VAP_WIF });
+agent.register(process.env.AGENT_NAME_ARG)
   .then(r => console.log(JSON.stringify(r)))
   .catch(e => { console.error('ERROR:', e.message); process.exit(1); });
 ")
@@ -133,4 +133,4 @@ echo "  2. Set VAP_AGENT_WIF env var (or keep using config file)"
 echo "  3. Start listening: bash $(dirname "$0")/start.sh"
 echo ""
 echo "⚠️  BACK UP YOUR WIF KEY — it cannot be recovered!"
-echo "    WIF: $WIF"
+echo "    Your WIF key is stored in: $CONFIG_FILE"

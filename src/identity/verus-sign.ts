@@ -98,23 +98,6 @@ function privateKeyToAddress(privKey: Uint8Array, network: 'verus' | 'verustest'
 }
 
 /**
- * Encode varint
- */
-function encodeVarInt(n: number): Buffer {
-  if (n < 0xfd) return Buffer.from([n]);
-  if (n <= 0xffff) {
-    const buf = Buffer.alloc(3);
-    buf[0] = 0xfd;
-    buf.writeUInt16LE(n, 1);
-    return buf;
-  }
-  const buf = Buffer.alloc(5);
-  buf[0] = 0xfe;
-  buf.writeUInt32LE(n, 1);
-  return buf;
-}
-
-/**
  * Sign a message (legacy format compatible with verus verifymessage)
  */
 export function signMessage(
@@ -166,38 +149,21 @@ export function signChallenge(
     : identityAddress;  // Login/registration: use i-address
   
   // Get keyPair from WIF
-  let keyPair;
-  try {
-    keyPair = ECPair.fromWIF(wif, networkObj);
-  } catch (err: unknown) {
-    throw err;
-  }
-  
-  // Create IdentitySignature
-  // version=2, hashType=5 (SHA256), blockHeight=0
-  // chainId already defined above
-  
-  let idSig;
-  try {
-    idSig = new IdentitySignature(
-      networkObj,
-      2,    // version
-      5,    // hashType (SHA256)
-      0,    // blockHeight
-      [],   // signatures (will be filled by sign)
-      chainId, // chain ID (required!)
-      signingIdentity // identity (i-address or null for R-address)
-    );
-  } catch (err: unknown) {
-    throw err;
-  }
-  
+  const keyPair = ECPair.fromWIF(wif, networkObj);
+
+  // Create IdentitySignature (version=2, hashType=5 SHA256, blockHeight=0)
+  const idSig = new IdentitySignature(
+    networkObj,
+    2,    // version
+    5,    // hashType (SHA256)
+    0,    // blockHeight
+    [],   // signatures (will be filled by sign)
+    chainId, // chain ID (required!)
+    signingIdentity // identity (i-address or null for R-address)
+  );
+
   // Sign the message
-  try {
-    idSig.signMessageOffline(challenge, keyPair);
-  } catch (err: unknown) {
-    throw err;
-  }
+  idSig.signMessageOffline(challenge, keyPair);
   
   // Return compact signature (65 bytes) for both R-address and i-address
   // Server verifymessage expects 65-byte compact signature
@@ -212,8 +178,10 @@ export function keypairFromWIF(wif: string, network: 'verus' | 'verustest' = 've
   const pubkey = privateKeyToPublicKey(privKey, true);
   const address = privateKeyToAddress(privKey, network);
 
+  // Zero the private key material after deriving public key + address
+  privKey.fill(0);
+
   return {
-    privateKey: Buffer.from(privKey).toString('hex'),
     publicKey: Buffer.from(pubkey).toString('hex'),
     address,
     wif,
@@ -228,6 +196,10 @@ export function generateKeypair(network: 'verus' | 'verustest' = 'verustest') {
   const wifVersion = network === 'verustest' ? VERUS_NETWORK.wif : VERUS_MAINNET.wif;
   const wifPayload = Buffer.concat([Buffer.from([wifVersion]), privKey, Buffer.from([0x01])]);
   const wif = bs58check.encode(wifPayload);
+
+  // Zero raw key material after WIF encoding
+  privKey.fill(0);
+  wifPayload.fill(0);
 
   return keypairFromWIF(wif, network);
 }

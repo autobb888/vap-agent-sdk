@@ -368,8 +368,7 @@ async function registerAgent(apiUrl, savedKeys) {
   console.log('  This may take several minutes (waiting for block confirmation).');
   console.log('');
 
-  const agent = new VAPAgent({ vapUrl: apiUrl, wif: keys.wif });
-  agent.generateKeys(keys.network || 'verustest');
+  const agent = new VAPAgent({ vapUrl: apiUrl, wif: keys.wif, network: keys.network || 'verustest' });
 
   try {
     // Step 1: On-chain identity registration
@@ -456,8 +455,8 @@ async function updateAgentProfile(apiUrl, savedKeys) {
     wif: savedKeys.wif,
     identityName: savedKeys.identity,
     iAddress: savedKeys.iAddress,
+    network: savedKeys.network || 'verustest',
   });
-  agent.generateKeys(savedKeys.network || 'verustest');
 
   // Canary protection
   const enableCanary = (await ask('  Enable canary token protection? (Y/n): ')).trim().toLowerCase();
@@ -495,9 +494,9 @@ function showKeys(savedKeys) {
     console.log('  No keys found. Generate keys first (option 1).\n');
     return;
   }
-  console.log(`  Address:  ${savedKeys.address}`);
-  console.log(`  Pubkey:   ${savedKeys.pubkey}`);
-  console.log(`  WIF:      ${savedKeys.wif.substring(0, 4)}...${savedKeys.wif.slice(-4)}  (full key in ${KEYS_FILE})`);
+  console.log(`  Address:  ${savedKeys.address || '(missing)'}`);
+  console.log(`  Pubkey:   ${savedKeys.pubkey || '(missing)'}`);
+  console.log(`  WIF:      ${savedKeys.wif ? `${savedKeys.wif.substring(0, 4)}...${savedKeys.wif.slice(-4)}  (full key in ${KEYS_FILE})` : '(missing)'}`);
   console.log(`  Network:  ${savedKeys.network || 'verustest'}`);
   if (savedKeys.identity) console.log(`  Identity: ${savedKeys.identity}`);
   if (savedKeys.iAddress) console.log(`  i-Address: ${savedKeys.iAddress}`);
