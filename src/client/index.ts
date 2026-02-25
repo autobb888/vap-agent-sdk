@@ -5,6 +5,8 @@
 
 import type { DeletionAttestation } from '../privacy/attestation.js';
 import type { SessionInput } from '../onboarding/validation.js';
+import { keypairFromWIF } from '../identity/keypair.js';
+import { signMessage as verusSignMessage } from '../identity/signer.js';
 
 export interface VAPClientConfig {
   /** VAP API base URL (e.g. https://api.autobb.app) */
@@ -27,6 +29,10 @@ export class VAPClient {
   }
 
   setSessionToken(token: string): void {
+    // Reject tokens with control characters to prevent header injection
+    if (/[\r\n\x00-\x1f]/.test(token)) {
+      throw new VAPError('Session token contains invalid characters', 'INVALID_TOKEN', 400);
+    }
     this.sessionToken = token;
   }
 
@@ -59,12 +65,24 @@ export class VAPClient {
         headers['Cookie'] = `verus_session=${this.sessionToken}`;
       }
 
-      const response = await fetch(`${this.baseUrl}${path}`, {
-        method,
-        headers,
-        body: body ? JSON.stringify(body) : undefined,
-        signal: controller.signal,
-      });
+      let response: Response;
+      try {
+        response = await fetch(`${this.baseUrl}${path}`, {
+          method,
+          headers,
+          body: body ? JSON.stringify(body) : undefined,
+          signal: controller.signal,
+        });
+      } catch (fetchErr) {
+        if ((fetchErr as Error).name === 'AbortError') {
+          throw new VAPError(
+            `Request to ${method} ${path} timed out after ${this.timeout}ms`,
+            'TIMEOUT',
+            408,
+          );
+        }
+        throw fetchErr;
+      }
 
       let data: Record<string, unknown>;
       try {
@@ -117,22 +135,26 @@ export class VAPClient {
 
   /** Get chain info (public — no auth required) */
   async getChainInfo(): Promise<ChainInfo> {
-    return this.request('GET', '/v1/tx/info');
+    const res = await this.request<{ data: ChainInfo }>('GET', '/v1/tx/info');
+    return res.data;
   }
 
   /** Get UTXOs for authenticated identity */
   async getUtxos(): Promise<UtxoResponse> {
-    return this.request('GET', '/v1/tx/utxos');
+    const res = await this.request<{ data: UtxoResponse }>('GET', '/v1/tx/utxos');
+    return res.data;
   }
 
   /** Broadcast a signed raw transaction */
   async broadcast(rawhex: string): Promise<BroadcastResponse> {
-    return this.request('POST', '/v1/tx/broadcast', { rawhex });
+    const res = await this.request<{ data: BroadcastResponse }>('POST', '/v1/tx/broadcast', { rawhex });
+    return res.data;
   }
 
   /** Get transaction status */
   async getTxStatus(txid: string): Promise<TxStatus> {
-    return this.request('GET', `/v1/tx/status/${encodeURIComponent(txid)}`);
+    const res = await this.request<{ data: TxStatus }>('GET', `/v1/tx/status/${encodeURIComponent(txid)}`);
+    return res.data;
   }
 
   // ------------------------------------------
@@ -162,11 +184,18 @@ export class VAPClient {
     identityAddress: string,
     network: 'verus' | 'verustest' = 'verustest'
   ): Promise<OnboardStatus> {
-    const { keypairFromWIF } = await import('../identity/keypair.js');
-    
     // Get keypair info from WIF
     const keypair = keypairFromWIF(wif, network);
-    
+
+    // Validate that the WIF-derived address matches the expected identity address
+    if (keypair.address !== identityAddress) {
+      throw new VAPError(
+        `WIF key derives address ${keypair.address} but expected ${identityAddress}`,
+        'ADDRESS_MISMATCH',
+        400,
+      );
+    }
+
     // Step 1: Get challenge
     const challengeRes = await this.onboard(name, keypair.address, keypair.pubkey);
     
@@ -175,8 +204,7 @@ export class VAPClient {
     }
     
     // Step 2: Sign challenge with verifymessage-compatible signature
-    const { signMessage } = await import('../identity/signer.js');
-    const signature = signMessage(wif, challengeRes.challenge, network);
+    const signature = verusSignMessage(wif, challengeRes.challenge, network);
     
     // Step 3: Submit with signature
     const result = await this.onboardWithSignature(
@@ -199,26 +227,29 @@ export class VAPClient {
   /** Poll onboarding status until complete or failed */
   async pollOnboardStatus(onboardId: string, maxAttempts = 30, intervalMs = 10000): Promise<OnboardStatus> {
     for (let i = 0; i < maxAttempts; i++) {
+      // Wait before polling (skip first iteration to check immediately)
+      if (i > 0) {
+        await new Promise(r => setTimeout(r, intervalMs));
+      }
+
       const status = await this.onboardStatus(onboardId);
-      
+
       if (status.status === 'registered') {
         return status;
       }
-      
+
       if (status.status === 'failed') {
         throw new VAPError(status.error || 'Registration failed', 'ONBOARD_FAILED', 500);
       }
-      
-      // Wait before next poll
-      await new Promise(r => setTimeout(r, intervalMs));
     }
-    
+
     throw new VAPError('Registration timeout', 'ONBOARD_TIMEOUT', 504);
   }
 
   /** Request onboarding challenge (step 1) */
   async onboard(name: string, address: string, pubkey: string): Promise<OnboardResponse> {
-    return this.request('POST', '/v1/onboard', { name, address, pubkey });
+    const res = await this.request<{ data: OnboardResponse }>('POST', '/v1/onboard', { name, address, pubkey });
+    return res.data;
   }
 
   /** Submit onboarding with signed challenge (step 2) */
@@ -226,14 +257,16 @@ export class VAPClient {
     name: string, address: string, pubkey: string,
     challenge: string, token: string, signature: string
   ): Promise<OnboardResponse> {
-    return this.request('POST', '/v1/onboard', {
+    const res = await this.request<{ data: OnboardResponse }>('POST', '/v1/onboard', {
       name, address, pubkey, challenge, token, signature,
     });
+    return res.data;
   }
 
   /** Check onboarding status */
   async onboardStatus(id: string): Promise<OnboardStatus> {
-    return this.request('GET', `/v1/onboard/status/${encodeURIComponent(id)}`);
+    const res = await this.request<{ data: OnboardStatus }>('GET', `/v1/onboard/status/${encodeURIComponent(id)}`);
+    return res.data;
   }
 
   // ------------------------------------------
@@ -242,36 +275,48 @@ export class VAPClient {
 
   /** Register agent profile (signed payload, requires cookie auth) */
   async registerAgent(data: RegisterAgentData): Promise<{ agentId: string }> {
-    return this.request('POST', '/v1/agents/register', data);
+    const res = await this.request<{ data: { agentId: string } }>('POST', '/v1/agents/register', data);
+    return res.data;
   }
 
   /** Register a service (requires cookie auth) */
   async registerService(data: RegisterServiceData): Promise<{ serviceId: string }> {
-    return this.request('POST', '/v1/me/services', data);
+    const res = await this.request<{ data: { serviceId: string } }>('POST', '/v1/me/services', data);
+    return res.data;
   }
 
   /** Get jobs for authenticated identity */
-  async getMyJobs(params?: { status?: string; role?: 'buyer' | 'seller' }): Promise<{ jobs: Job[] }> {
+  async getMyJobs(params?: { status?: string; role?: 'buyer' | 'seller' }): Promise<{ data: Job[]; meta?: Record<string, unknown> }> {
     const query = new URLSearchParams();
     if (params?.status) query.set('status', params.status);
     if (params?.role) query.set('role', params.role);
     const qs = query.toString();
-    return this.request('GET', `/v1/me/jobs${qs ? `?${qs}` : ''}`);
+    const res = await this.request<{ data: Job[]; meta?: Record<string, unknown> }>('GET', `/v1/me/jobs${qs ? `?${qs}` : ''}`);
+    return res;
   }
 
   /** Accept a job */
-  async acceptJob(jobId: string, signature: string, timestamp: number): Promise<{ status: string }> {
-    return this.request('POST', `/v1/jobs/${encodeURIComponent(jobId)}/accept`, { signature, timestamp });
+  async acceptJob(jobId: string, signature: string, timestamp: number): Promise<Job> {
+    const res = await this.request<{ data: Job }>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/accept`, { signature, timestamp });
+    return res.data;
   }
 
   /** Deliver a job */
-  async deliverJob(jobId: string, signature: string, message: string, content?: string): Promise<{ status: string }> {
-    return this.request('POST', `/v1/jobs/${encodeURIComponent(jobId)}/deliver`, { signature, message, content });
+  async deliverJob(jobId: string, deliveryHash: string, signature: string, timestamp: number, deliveryMessage?: string): Promise<Job> {
+    const res = await this.request<{ data: Job }>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/deliver`, { deliveryHash, deliveryMessage, timestamp, signature });
+    return res.data;
+  }
+
+  /** Complete a job (buyer confirms delivery) */
+  async completeJob(jobId: string, signature: string, timestamp: number): Promise<Job> {
+    const res = await this.request<{ data: Job }>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/complete`, { timestamp, signature });
+    return res.data;
   }
 
   /** Get job details */
   async getJob(jobId: string): Promise<Job> {
-    return this.request('GET', `/v1/jobs/${encodeURIComponent(jobId)}`);
+    const res = await this.request<{ data: Job }>('GET', `/v1/jobs/${encodeURIComponent(jobId)}`);
+    return res.data;
   }
 
   // ------------------------------------------
@@ -280,12 +325,14 @@ export class VAPClient {
 
   /** Register a canary token so SafeChat watches for leaks */
   async registerCanary(canary: { token: string; format: string }): Promise<{ status: string }> {
-    return this.request('POST', '/v1/me/canary', canary);
+    const res = await this.request<{ data: { status: string } }>('POST', '/v1/me/canary', canary);
+    return res.data;
   }
 
   /** Set communication policy (safechat_only | safechat_preferred | external) */
   async setCommunicationPolicy(policy: string, externalChannels?: { type: string; handle?: string }[]): Promise<{ status: string }> {
-    return this.request('POST', '/v1/me/communication-policy', { policy, externalChannels });
+    const res = await this.request<{ data: { status: string } }>('POST', '/v1/me/communication-policy', { policy, externalChannels });
+    return res.data;
   }
 
   // ------------------------------------------
@@ -293,14 +340,73 @@ export class VAPClient {
   // ------------------------------------------
 
   /** Get chat messages for a job */
-  async getChatMessages(jobId: string, limit?: number): Promise<{ messages: ChatMessage[] }> {
-    const qs = limit ? `?limit=${limit}` : '';
-    return this.request('GET', `/v1/chat/${encodeURIComponent(jobId)}/messages${qs}`);
+  async getChatMessages(jobId: string, params?: { limit?: number; offset?: number; since?: string }): Promise<{ data: ChatMessage[]; meta: { total: number; limit: number; offset: number } }> {
+    const query = new URLSearchParams();
+    if (params?.limit != null) query.set('limit', String(params.limit));
+    if (params?.offset != null) query.set('offset', String(params.offset));
+    if (params?.since) query.set('since', params.since);
+    const qs = query.toString();
+    const res = await this.request<{ data: ChatMessage[]; meta: { total: number; limit: number; offset: number } }>('GET', `/v1/jobs/${encodeURIComponent(jobId)}/messages${qs ? `?${qs}` : ''}`);
+    return res;
   }
 
   /** Send a chat message */
-  async sendChatMessage(jobId: string, content: string): Promise<{ messageId: string }> {
-    return this.request('POST', `/v1/chat/${encodeURIComponent(jobId)}/messages`, { content });
+  async sendChatMessage(jobId: string, content: string, signature?: string): Promise<ChatMessage> {
+    const res = await this.request<{ data: ChatMessage }>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/messages`, { content, signature });
+    return res.data;
+  }
+
+  // ------------------------------------------
+  // Job lifecycle endpoints
+  // ------------------------------------------
+
+  /** Request end of session (buyer or seller) */
+  async requestEndSession(jobId: string, reason?: string): Promise<EndSessionResponse> {
+    const res = await this.request<{ data: EndSessionResponse }>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/end-session`, { reason });
+    return res.data;
+  }
+
+  /** Record agent payment txid (buyer submits after sending VRSC) */
+  async recordPayment(jobId: string, txid: string): Promise<{ data: Job; meta: { verificationNote: string } }> {
+    const res = await this.request<{ data: Job; meta: { verificationNote: string } }>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/payment`, { txid });
+    return res;
+  }
+
+  /** Record platform fee txid (buyer submits after sending fee) */
+  async recordPlatformFee(jobId: string, txid: string): Promise<{ data: Job; meta: { verificationNote: string } }> {
+    const res = await this.request<{ data: Job; meta: { verificationNote: string } }>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/platform-fee`, { txid });
+    return res;
+  }
+
+  /** Cancel a job (buyer only, must be in 'requested' status) */
+  async cancelJob(jobId: string): Promise<Job> {
+    const res = await this.request<{ data: Job }>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/cancel`, {});
+    return res.data;
+  }
+
+  /** Dispute a job (buyer or seller, signed) */
+  async disputeJob(jobId: string, reason: string, signature: string, timestamp: number): Promise<Job> {
+    const res = await this.request<{ data: Job }>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/dispute`, { reason, timestamp, signature });
+    return res.data;
+  }
+
+  /** Get payment QR code data for a job */
+  async getPaymentQr(jobId: string, type: 'agent' | 'fee' = 'agent'): Promise<PaymentQrResponse> {
+    const query = new URLSearchParams({ type });
+    const res = await this.request<{ data: PaymentQrResponse }>('GET', `/v1/jobs/${encodeURIComponent(jobId)}/payment-qr?${query}`);
+    return res.data;
+  }
+
+  /** Get job by hash (public) */
+  async getJobByHash(hash: string): Promise<Job> {
+    const res = await this.request<{ data: Job }>('GET', `/v1/jobs/hash/${encodeURIComponent(hash)}`);
+    return res.data;
+  }
+
+  /** Get jobs with unread messages */
+  async getUnreadJobs(): Promise<Job[]> {
+    const res = await this.request<{ data: Job[] }>('GET', '/v1/me/unread-jobs');
+    return res.data;
   }
 
   // ------------------------------------------
@@ -309,7 +415,8 @@ export class VAPClient {
 
   /** Update agent profile (privacy tier, etc.) */
   async updateAgentProfile(data: { privacyTier?: string; [key: string]: unknown }): Promise<{ status: string }> {
-    return this.request('PATCH', '/v1/me/agent', data);
+    const res = await this.request<{ data: { status: string } }>('PATCH', '/v1/me/agent', data);
+    return res.data;
   }
 
   // ------------------------------------------
@@ -317,28 +424,33 @@ export class VAPClient {
   // ------------------------------------------
 
   /** Request a session extension (additional payment for more work) */
-  async requestExtension(jobId: string, amount: number, reason?: string): Promise<{ data: JobExtension }> {
-    return this.request('POST', `/v1/jobs/${encodeURIComponent(jobId)}/extensions`, { amount, reason });
+  async requestExtension(jobId: string, amount: number, reason?: string): Promise<JobExtension> {
+    const res = await this.request<{ data: JobExtension }>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/extensions`, { amount, reason });
+    return res.data;
   }
 
   /** Get extensions for a job */
-  async getExtensions(jobId: string): Promise<{ data: JobExtension[] }> {
-    return this.request('GET', `/v1/jobs/${encodeURIComponent(jobId)}/extensions`);
+  async getExtensions(jobId: string): Promise<JobExtension[]> {
+    const res = await this.request<{ data: JobExtension[] }>('GET', `/v1/jobs/${encodeURIComponent(jobId)}/extensions`);
+    return res.data;
   }
 
   /** Approve an extension request */
-  async approveExtension(jobId: string, extensionId: string): Promise<{ data: { id: string; status: string } }> {
-    return this.request('POST', `/v1/jobs/${encodeURIComponent(jobId)}/extensions/${encodeURIComponent(extensionId)}/approve`, {});
+  async approveExtension(jobId: string, extensionId: string): Promise<{ id: string; status: string }> {
+    const res = await this.request<{ data: { id: string; status: string } }>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/extensions/${encodeURIComponent(extensionId)}/approve`, {});
+    return res.data;
   }
 
   /** Reject an extension request */
-  async rejectExtension(jobId: string, extensionId: string): Promise<{ data: { id: string; status: string } }> {
-    return this.request('POST', `/v1/jobs/${encodeURIComponent(jobId)}/extensions/${encodeURIComponent(extensionId)}/reject`, {});
+  async rejectExtension(jobId: string, extensionId: string): Promise<{ id: string; status: string }> {
+    const res = await this.request<{ data: { id: string; status: string } }>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/extensions/${encodeURIComponent(extensionId)}/reject`, {});
+    return res.data;
   }
 
   /** Submit extension payment txids */
-  async payExtension(jobId: string, extensionId: string, agentTxid?: string, feeTxid?: string): Promise<{ data: { id: string; status: string } }> {
-    return this.request('POST', `/v1/jobs/${encodeURIComponent(jobId)}/extensions/${encodeURIComponent(extensionId)}/payment`, { agentTxid, feeTxid });
+  async payExtension(jobId: string, extensionId: string, agentTxid?: string, feeTxid?: string): Promise<{ id: string; status: string }> {
+    const res = await this.request<{ data: { id: string; status: string } }>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/extensions/${encodeURIComponent(extensionId)}/payment`, { agentTxid, feeTxid });
+    return res.data;
   }
 
   // ------------------------------------------
@@ -347,12 +459,14 @@ export class VAPClient {
 
   /** Submit a deletion attestation */
   async submitAttestation(attestation: DeletionAttestation): Promise<{ id: string }> {
-    return this.request('POST', '/v1/me/attestations', attestation);
+    const res = await this.request<{ data: { id: string } }>('POST', '/v1/me/attestations', attestation);
+    return res.data;
   }
 
   /** Get attestations for an agent */
   async getAttestations(agentId: string): Promise<{ attestations: DeletionAttestation[] }> {
-    return this.request('GET', `/v1/agents/${encodeURIComponent(agentId)}/attestations`);
+    const res = await this.request<{ data: { attestations: DeletionAttestation[] } }>('GET', `/v1/agents/${encodeURIComponent(agentId)}/attestations`);
+    return res.data;
   }
 
   // ------------------------------------------
@@ -376,7 +490,8 @@ export class VAPClient {
     if (params.privacyTier) query.set('privacyTier', params.privacyTier);
     if (params.vrscUsdRate != null) query.set('vrscUsdRate', String(params.vrscUsdRate));
     const qs = query.toString();
-    return this.request('GET', `/v1/pricing/recommend${qs ? `?${qs}` : ''}`);
+    const res = await this.request<{ data: Record<string, unknown> }>('GET', `/v1/pricing/recommend${qs ? `?${qs}` : ''}`);
+    return res.data;
   }
 }
 
@@ -489,24 +604,60 @@ export interface Job {
   status: 'requested' | 'accepted' | 'in_progress' | 'delivered' | 'completed' | 'disputed' | 'cancelled';
   buyerVerusId: string;
   sellerVerusId: string;
-  serviceId?: string;
+  serviceId?: string | null;
   description: string;
   amount: number;
   currency: string;
-  deadline?: string;
+  deadline?: string | null;
   safechatEnabled?: boolean;
   payment?: {
-    terms: string;
-    address?: string;
-    txid?: string;
+    terms: 'prepay' | 'postpay' | 'split';
+    address?: string | null;
+    txid?: string | null;
     verified: boolean;
-    platformFeeTxid?: string;
+    platformFeeTxid?: string | null;
     platformFeeVerified: boolean;
     platformFeeAddress?: string;
+    feeRate?: number;
     feeAmount?: number;
+  };
+  signatures?: {
+    request?: string | null;
+    acceptance?: string | null;
+    delivery?: string | null;
+    completion?: string | null;
+  };
+  delivery?: {
+    hash?: string;
+    message?: string;
+  };
+  timestamps?: {
+    requested?: string | null;
+    accepted?: string | null;
+    delivered?: string | null;
+    completed?: string | null;
+    created?: string | null;
+    updated?: string | null;
   };
   createdAt: string;
   updatedAt: string;
+}
+
+export interface EndSessionResponse {
+  jobId: string;
+  status: 'end_session_requested';
+  requestedBy: string;
+  reason: string;
+  timestamp: string;
+}
+
+export interface PaymentQrResponse {
+  type: 'agent' | 'fee';
+  address: string;
+  amount: number;
+  currency: string;
+  qrString: string;
+  deeplink: string;
 }
 
 export interface JobExtension {

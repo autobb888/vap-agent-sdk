@@ -225,14 +225,20 @@ export function verifyPublishedIdentity(params: {
       continue;
     }
 
-    const expectedFirst = Array.isArray(value) ? value[0] : undefined;
-    const actualFirst = onchain[key][0];
+    if (!Array.isArray(value) || value.length === 0) continue;
 
-    if (expectedFirst && actualFirst !== expectedFirst) {
-      const e = decodeVdxfValue(expectedFirst);
-      const a = decodeVdxfValue(actualFirst);
-      if (JSON.stringify(e) !== JSON.stringify(a)) {
-        errors.push(`value mismatch on ${key}`);
+    if (onchain[key].length !== value.length) {
+      errors.push(`array length mismatch on ${key}: expected ${value.length}, got ${onchain[key].length}`);
+      continue;
+    }
+
+    for (let i = 0; i < value.length; i++) {
+      if (onchain[key][i] !== value[i]) {
+        const e = decodeVdxfValue(value[i]);
+        const a = decodeVdxfValue(onchain[key][i]);
+        if (JSON.stringify(e) !== JSON.stringify(a)) {
+          errors.push(`value mismatch on ${key}[${i}]`);
+        }
       }
     }
   }
@@ -254,6 +260,9 @@ export function buildUpdateIdentityPayload(identityName: string, contentmultimap
 }
 
 export function buildUpdateIdentityCommand(payload: Record<string, unknown>, chain: 'verustest' | 'verus' = 'verustest'): string[] {
-  const chainArg = chain === 'verustest' ? '-chain=vrsctest' : '-chain=vrsc';
-  return ['verus', chainArg, 'updateidentity', JSON.stringify(payload)];
+  const args = ['verus'];
+  // Only pass -chain for testnet; mainnet is the default and doesn't need a chain argument
+  if (chain === 'verustest') args.push('-chain=vrsctest');
+  args.push('updateidentity', JSON.stringify(payload));
+  return args;
 }

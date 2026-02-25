@@ -6,3 +6,6 @@ vap-agent.yml
 .vap-keys.json
 dist/
 .challenge.json
+register-*.mjs
+register-*.cjs
+tsc

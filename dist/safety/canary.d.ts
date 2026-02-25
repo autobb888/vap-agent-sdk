@@ -46,6 +46,8 @@ export declare function generateCanary(): CanaryConfig;
 /**
  * Check if a text contains a canary token.
  * Used for local pre-screening before sending to VAP.
+ * Applies Unicode normalization and zero-width character stripping to resist evasion.
+ * Note: This is a first-pass check; SafeChat server-side scanning is the primary defense.
  *
  * @returns true if the canary was leaked (BAD — don't send this message)
  */

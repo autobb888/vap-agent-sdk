@@ -18,7 +18,7 @@ import { EventEmitter } from 'node:events';
 import { VAPClient } from './client/index.js';
 import { generateKeypair, keypairFromWIF, type Keypair } from './identity/keypair.js';
 import { signChallenge, signMessage } from './identity/signer.js';
-import { ChatClient, type IncomingMessage, type MessageHandler } from './chat/client.js';
+import { ChatClient, type IncomingMessage, type SessionEndingEvent, type SessionExpiringEvent, type JobStatusChangedEvent } from './chat/client.js';
 import type { JobHandler, JobHandlerConfig } from './jobs/types.js';
 import type { Job } from './client/index.js';
 import type { SessionInput } from './onboarding/finalize.js';
@@ -28,6 +28,8 @@ import { generateAttestationPayload, signAttestation, type DeletionAttestation }
 import { recommendPrice, type PriceRecommendation } from './pricing/calculator.js';
 import type { JobCategory } from './pricing/tables.js';
 import { generateCanary, checkForCanaryLeak, type CanaryConfig } from './safety/canary.js';
+import { randomUUID } from 'node:crypto';
+import { canonicalize } from 'json-canonicalize';
 
 /** Default request timeout for raw fetch calls (ms) */
 const FETCH_TIMEOUT = 30_000;
@@ -68,6 +70,7 @@ export class VAPAgent extends EventEmitter {
   private canaryConfig: CanaryConfig | null = null;
   private polling = false;
   private seenJobIds = new Set<string>();
+  private loginPromise: Promise<string> | null = null;
 
   constructor(config: VAPAgentConfig) {
     super();
@@ -84,12 +87,13 @@ export class VAPAgent extends EventEmitter {
     this.jobConfig = config.jobConfig || { pollInterval: 30_000 };
     this.networkType = config.network || 'verustest';
 
-    // Prevent uncaught 'error' events from crashing the process
-    if (this.listenerCount('error') === 0) {
-      this.on('error', (err) => {
+    // Prevent uncaught 'error' events from crashing the process.
+    // Only log if no user-provided listener is registered.
+    this.on('error', (err) => {
+      if (this.listenerCount('error') <= 1) {
         console.error('[VAP Agent] Unhandled error:', err instanceof Error ? err.message : err);
-      });
-    }
+      }
+    });
   }
 
   /**
@@ -117,12 +121,29 @@ export class VAPAgent extends EventEmitter {
    * Shared by registerWithVAP(), registerService(), and enableCanaryProtection().
    */
   private async login(): Promise<string> {
+    // Mutex: deduplicate concurrent login calls to prevent session token races
+    if (this.loginPromise) return this.loginPromise;
+    this.loginPromise = this._loginImpl();
+    try {
+      return await this.loginPromise;
+    } finally {
+      this.loginPromise = null;
+    }
+  }
+
+  private async _loginImpl(): Promise<string> {
     if (!this.wif) throw new Error('WIF key required');
     if (!this.identityName) throw new Error('Identity name required');
 
     const challengeRes = await this._client.getAuthChallenge();
-    if (challengeRes.expiresAt && new Date(challengeRes.expiresAt).getTime() < Date.now()) {
-      throw new Error('Auth challenge already expired — clock skew or stale response');
+    if (challengeRes.expiresAt) {
+      const expiryMs = new Date(challengeRes.expiresAt).getTime();
+      if (Number.isNaN(expiryMs)) {
+        throw new Error('Auth challenge has unparseable expiresAt timestamp');
+      }
+      if (expiryMs < Date.now()) {
+        throw new Error('Auth challenge already expired — clock skew or stale response');
+      }
     }
 
     const signature = signMessage(this.wif, challengeRes.challenge, this.networkType);
@@ -143,8 +164,7 @@ export class VAPAgent extends EventEmitter {
         }),
       });
     } catch (err) {
-      clearTimeout(timer);
-      if (err instanceof DOMException && err.name === 'AbortError') {
+      if ((err as Error).name === 'AbortError') {
         throw new Error(`Login request timed out after ${FETCH_TIMEOUT}ms`);
       }
       throw err;
@@ -173,7 +193,19 @@ export class VAPAgent extends EventEmitter {
     }
     this._client.setSessionToken(match[1]);
 
-    return cookies;
+    // Return only the clean cookie name=value pair, not the full set-cookie with attributes
+    return `verus_session=${match[1]}`;
+  }
+
+  /**
+   * Authenticate with the VAP platform (public method).
+   * Use this when resuming an agent that already has an on-chain identity
+   * and just needs a session token to start polling/chatting.
+   */
+  async authenticate(): Promise<void> {
+    await this.login();
+    console.log('[VAP Agent] ✅ Authenticated');
+    this.emit('authenticated');
   }
 
   /**
@@ -184,7 +216,9 @@ export class VAPAgent extends EventEmitter {
    * @returns Identity info once registered
    */
   async register(name: string, network: 'verus' | 'verustest' = 'verustest'): Promise<{ identity: string; iAddress: string }> {
+    const previousNetwork = this.networkType;
     this.networkType = network;
+    try {
     if (!this.keypair && this.wif) {
       this.keypair = keypairFromWIF(this.wif, network);
     } else if (!this.keypair) {
@@ -277,12 +311,17 @@ export class VAPAgent extends EventEmitter {
     this.emit('registered', { identity: this.identityName, iAddress: this.iAddress });
 
     return { identity: this.identityName, iAddress: this.iAddress };
+    } catch (err) {
+      // Rollback networkType on failure to prevent corrupted state
+      this.networkType = previousNetwork;
+      throw err;
+    }
   }
 
   /**
    * Register the agent with the VAP platform (after on-chain identity exists).
    * This creates the agent profile and enables receiving jobs.
-   * 
+   *
    * @param agentData - Agent profile data
    * @returns Registration result
    */
@@ -315,8 +354,6 @@ export class VAPAgent extends EventEmitter {
       throw new Error('Identity name required (call register() first or set identityName)');
     }
 
-    const iAddress = this.iAddress || this.keypair.address;
-
     console.log(`[VAP Agent] Registering with VAP platform...`);
 
     // Step 1: Login
@@ -326,8 +363,6 @@ export class VAPAgent extends EventEmitter {
 
     // Step 2: Register agent with signed payload
     console.log(`[VAP Agent] Submitting registration...`);
-    const { randomUUID } = await import('crypto');
-    const { canonicalize } = await import('json-canonicalize');
 
     const payload = {
       verusId: this.identityName,
@@ -355,6 +390,11 @@ export class VAPAgent extends EventEmitter {
         signal: regController.signal,
         body: JSON.stringify({ ...payload, signature: regSignature }),
       });
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') {
+        throw new Error(`Registration request timed out after ${FETCH_TIMEOUT}ms`);
+      }
+      throw err;
     } finally {
       clearTimeout(regTimer);
     }
@@ -369,6 +409,8 @@ export class VAPAgent extends EventEmitter {
     } else if (!regRes.ok) {
       const errMsg = (responseData.error as Record<string, unknown>)?.message || regRes.statusText;
       throw new Error(`Registration failed: ${errMsg}`);
+    } else if (!responseData.data) {
+      throw new Error('Registration succeeded but response body was missing data');
     } else {
       console.log(`[VAP Agent] ✅ Registered with VAP platform`);
       this.emit('registeredWithVAP', { agentId: (responseData.data as Record<string, unknown>)?.agentId });
@@ -474,6 +516,11 @@ export class VAPAgent extends EventEmitter {
         signal: controller.signal,
         body: JSON.stringify(serviceData),
       });
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') {
+        throw new Error(`Service registration request timed out after ${FETCH_TIMEOUT}ms`);
+      }
+      throw err;
     } finally {
       clearTimeout(timer);
     }
@@ -522,10 +569,19 @@ export class VAPAgent extends EventEmitter {
     }
 
     this.pollTimer = setInterval(() => {
+      if (!this.running) return;
       this.checkForJobs().catch((err) => {
         this.emit('error', err instanceof Error ? err : new Error(String(err)));
       });
     }, interval);
+
+    // Guard against stop() being called during the initial checkForJobs() await
+    if (!this.running) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+      return;
+    }
+
     this.emit('started');
   }
 
@@ -538,7 +594,7 @@ export class VAPAgent extends EventEmitter {
       this.pollTimer = null;
     }
     this.running = false;
-    this.seenJobIds.clear();
+    // Don't clear seenJobIds — persist across stop/start to avoid re-processing jobs
     this.emit('stopped');
     console.log('[VAP Agent] Stopped.');
     this.chatClient?.disconnect();
@@ -566,9 +622,8 @@ export class VAPAgent extends EventEmitter {
     });
 
     this.chatClient.onMessage((msg) => {
-      // Don't handle our own messages
-      const myId = this.iAddress || this.identityName;
-      if (msg.senderVerusId === myId || msg.senderVerusId === this.identityName) return;
+      // Don't handle our own messages — check both iAddress and identityName independently
+      if (msg.senderVerusId === this.iAddress || msg.senderVerusId === this.identityName) return;
 
       this.emit('chat:message', msg);
       if (this.chatHandler) {
@@ -581,14 +636,51 @@ export class VAPAgent extends EventEmitter {
       }
     });
 
+    // Wire up session/job lifecycle events
+    this.chatClient.onSessionEnding(async (event: SessionEndingEvent) => {
+      this.emit('session:ending', event);
+      if (this.handler?.onSessionEnding) {
+        try {
+          const job = await this._client.getJob(event.jobId);
+          await this.handler.onSessionEnding(job, event.reason, event.requestedBy);
+        } catch (err) {
+          this.emit('error', err instanceof Error ? err : new Error(String(err)));
+        }
+      }
+    });
+
+    this.chatClient.onSessionExpiring((event: SessionExpiringEvent) => {
+      this.emit('session:expiring', event);
+    });
+
+    this.chatClient.onJobStatusChanged(async (event: JobStatusChangedEvent) => {
+      this.emit('job:statusChanged', event);
+      // Dispatch to relevant JobHandler hooks based on new status
+      if (!this.handler) return;
+      try {
+        const job = await this._client.getJob(event.jobId);
+        if (event.status === 'in_progress' && this.handler.onJobStarted) {
+          await this.handler.onJobStarted(job);
+        } else if (event.status === 'completed' && this.handler.onJobCompleted) {
+          await this.handler.onJobCompleted(job);
+        } else if (event.status === 'disputed' && this.handler.onJobDisputed) {
+          await this.handler.onJobDisputed(job, 'Dispute raised');
+        } else if (event.status === 'cancelled' && this.handler.onJobCancelled) {
+          await this.handler.onJobCancelled(job, event.reason);
+        }
+      } catch (err) {
+        this.emit('error', err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+
     await this.chatClient.connect();
     console.log('[CHAT] ✅ Connected to SafeChat');
 
     // Join rooms for any active jobs we're the seller on
     try {
-      const { jobs } = await this._client.getMyJobs({ status: 'accepted', role: 'seller' });
+      const accepted = await this._client.getMyJobs({ status: 'accepted', role: 'seller' });
       const inProgress = await this._client.getMyJobs({ status: 'in_progress', role: 'seller' });
-      const allJobs = [...(jobs || []), ...(inProgress.jobs || [])];
+      const allJobs = [...(accepted.data || []), ...(inProgress.data || [])];
       for (const job of allJobs) {
         this.chatClient.joinJob(job.id);
       }
@@ -641,52 +733,63 @@ export class VAPAgent extends EventEmitter {
     this.polling = true;
 
     try {
-      const { jobs = [] } = await this._client.getMyJobs({ status: 'requested', role: 'seller' });
+      const res = await this._client.getMyJobs({ status: 'requested', role: 'seller' });
+      const jobs = res.data || [];
 
       for (const job of jobs) {
         // Stop processing if agent was stopped mid-poll
         if (!this.running) break;
 
-        // Skip jobs we've already processed (accepted or rejected)
+        // Skip jobs without an id (malformed response) or already processed
+        if (!job.id) continue;
         if (this.seenJobIds.has(job.id)) continue;
 
-        this.emit('job:requested', job);
+        try {
+          this.emit('job:requested', job);
 
-        if (this.handler.onJobRequested) {
-          const decision = await this.handler.onJobRequested(job);
+          if (this.handler.onJobRequested) {
+            const decision = await this.handler.onJobRequested(job);
 
-          if (decision === 'accept') {
-            if (!this.wif || !this.iAddress) {
-              this.emit('error', new Error(`Cannot accept job ${job.id}: WIF key and i-address required`));
-              continue;
-            }
-            try {
-              const timestamp = Math.floor(Date.now() / 1000);
-              const acceptMessage = `VAP-ACCEPT|Job:${job.jobHash}|Buyer:${job.buyerVerusId}|Amt:${job.amount} ${job.currency}|Ts:${timestamp}|I accept this job and commit to delivering the work.`;
-              const signature = signChallenge(this.wif, acceptMessage, this.iAddress, this.networkType);
-              await this._client.acceptJob(job.id, signature, timestamp);
-              this.seenJobIds.add(job.id);
-              this.emit('job:accepted', job);
-              // Auto-join chat room if chat is connected
-              if (this.chatClient?.isConnected) {
-                this.chatClient.joinJob(job.id);
+            if (decision === 'accept') {
+              if (!this.wif || !this.iAddress) {
+                this.emit('error', new Error(`Cannot accept job ${job.id}: WIF key and i-address required`));
+                continue;
               }
-            } catch (err) {
-              // Don't mark as seen on failure — allow retry on next poll
-              this.emit('error', new Error(`Failed to accept job ${job.id}: ${err instanceof Error ? err.message : String(err)}`));
+              try {
+                const timestamp = Math.floor(Date.now() / 1000);
+                const acceptMessage = `VAP-ACCEPT|Job:${job.jobHash}|Buyer:${job.buyerVerusId}|Amt:${job.amount} ${job.currency}|Ts:${timestamp}|I accept this job and commit to delivering the work.`;
+                const signature = signChallenge(this.wif, acceptMessage, this.iAddress, this.networkType);
+                await this._client.acceptJob(job.id, signature, timestamp);
+                this.seenJobIds.add(job.id);
+                this.emit('job:accepted', job);
+                // Auto-join chat room if chat is connected
+                if (this.chatClient?.isConnected) {
+                  this.chatClient.joinJob(job.id);
+                }
+              } catch (err) {
+                // Don't mark as seen on failure — allow retry on next poll
+                this.emit('error', new Error(`Failed to accept job ${job.id}: ${err instanceof Error ? err.message : String(err)}`));
+              }
+            } else if (decision === 'reject') {
+              this.seenJobIds.add(job.id);
+              this.emit('job:rejected', job);
             }
-          } else if (decision === 'reject') {
+            // 'hold' = do nothing; NOT added to seenJobIds so it's re-evaluated next poll
+          } else {
+            // No onJobRequested handler — mark as seen to avoid repeated job:requested events
             this.seenJobIds.add(job.id);
-            this.emit('job:rejected', job);
           }
-          // 'hold' = do nothing; NOT added to seenJobIds so it's re-evaluated next poll
+        } catch (jobErr) {
+          // Per-job error: don't skip remaining jobs in batch
+          this.emit('error', jobErr instanceof Error ? jobErr : new Error(String(jobErr)));
         }
+      }
 
-        // Evict oldest entries if the set grows too large
-        if (this.seenJobIds.size > VAPAgent.MAX_SEEN_JOBS) {
-          const first = this.seenJobIds.values().next().value;
-          if (first !== undefined) this.seenJobIds.delete(first);
-        }
+      // Evict oldest entries if the set grows too large
+      while (this.seenJobIds.size > VAPAgent.MAX_SEEN_JOBS) {
+        const first = this.seenJobIds.values().next().value;
+        if (first !== undefined) this.seenJobIds.delete(first);
+        else break;
       }
     } catch (error) {
       this.emit('error', error instanceof Error ? error : new Error(String(error)));
@@ -734,6 +837,11 @@ export class VAPAgent extends EventEmitter {
         signal: controller.signal,
         body: JSON.stringify(canary.registration),
       });
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') {
+        throw new Error(`Canary registration request timed out after ${FETCH_TIMEOUT}ms`);
+      }
+      throw err;
     } finally {
       clearTimeout(timer);
     }
@@ -811,8 +919,9 @@ export class VAPAgent extends EventEmitter {
       dataVolumes?: string[];
       deletionMethod?: string;
     },
-    network: 'verus' | 'verustest' = 'verustest',
+    network?: 'verus' | 'verustest',
   ): Promise<DeletionAttestation> {
+    const net = network ?? this.networkType;
     if (!this.wif) {
       throw new Error('WIF key required for signing attestations');
     }
@@ -831,7 +940,7 @@ export class VAPAgent extends EventEmitter {
       attestedBy: this.identityName,
     });
 
-    const attestation = signAttestation(payload, this.wif, network);
+    const attestation = signAttestation(payload, this.wif, net);
 
     // Submit to platform
     await this._client.submitAttestation(attestation);

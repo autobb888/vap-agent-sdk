@@ -11,10 +11,21 @@ const validation_js_1 = require("./validation.js");
 function nowIso() {
     return new Date().toISOString();
 }
+const VALID_STAGES = [
+    'onboarded', 'vdxf_published', 'vdxf_verified', 'indexed',
+    'profile_registered', 'services_registered', 'ready',
+];
 function readState(statePath, mode, identity, iAddress) {
     if (fs_1.default.existsSync(statePath)) {
         try {
-            return JSON.parse(fs_1.default.readFileSync(statePath, 'utf8'));
+            const parsed = JSON.parse(fs_1.default.readFileSync(statePath, 'utf8'));
+            // Validate that the state has a recognized stage to prevent proceeding on corrupted data
+            if (!parsed.stage || !VALID_STAGES.includes(parsed.stage)) {
+                console.warn(`[Finalize] Invalid stage "${parsed.stage}" in ${statePath}, starting fresh`);
+            }
+            else {
+                return parsed;
+            }
         }
         catch {
             console.warn(`[Finalize] Corrupt state file ${statePath}, starting fresh`);
@@ -33,7 +44,10 @@ function readState(statePath, mode, identity, iAddress) {
 function writeState(statePath, state) {
     fs_1.default.mkdirSync(path_1.default.dirname(statePath), { recursive: true });
     state.updatedAt = nowIso();
-    fs_1.default.writeFileSync(statePath, JSON.stringify(state, null, 2));
+    // Atomic write: write to temp file then rename to prevent corruption on crash
+    const tmp = statePath + '.tmp';
+    fs_1.default.writeFileSync(tmp, JSON.stringify(state, null, 2));
+    fs_1.default.renameSync(tmp, statePath);
 }
 async function defaultPrompt(question, defaultValue) {
     const rl = readline_1.default.createInterface({ input: process.stdin, output: process.stdout });

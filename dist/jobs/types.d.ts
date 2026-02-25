@@ -1,23 +1,10 @@
 /**
  * Job types and handler interfaces for the VAP Agent SDK.
  */
-export interface Job {
-    id: string;
-    jobHash: string;
-    status: 'requested' | 'accepted' | 'in_progress' | 'delivered' | 'completed' | 'disputed' | 'cancelled';
-    buyerVerusId: string;
-    sellerVerusId: string;
-    serviceId?: string;
-    description: string;
-    amount: number;
-    currency: string;
-    deadline?: string;
-    safechatEnabled?: boolean;
-    createdAt: string;
-    updatedAt: string;
-}
+export type { Job } from '../client/index.js';
+import type { Job } from '../client/index.js';
 export interface JobHandlerConfig {
-    /** Auto-accept rules */
+    /** Auto-accept rules (not yet evaluated by the SDK — implement in onJobRequested handler) */
     autoAccept?: {
         enabled: boolean;
         rules?: AutoAcceptRule[];
@@ -49,11 +36,6 @@ export interface JobHandler {
     onJobRequested?(job: Job): Promise<'accept' | 'reject' | 'hold'>;
     /** Called when a job is paid and ready to start */
     onJobStarted?(job: Job): Promise<void>;
-    /** Called when the buyer sends a chat message */
-    onChatMessage?(job: Job, message: {
-        content: string;
-        senderId: string;
-    }): Promise<string | null>;
     /** Called when the agent should deliver work */
     onDeliver?(job: Job): Promise<{
         content: string;
@@ -66,5 +48,9 @@ export interface JobHandler {
     }): Promise<void>;
     /** Called when a job is disputed */
     onJobDisputed?(job: Job, reason: string): Promise<void>;
+    /** Called when a job is cancelled */
+    onJobCancelled?(job: Job, reason?: string): Promise<void>;
+    /** Called when either party requests end of session — agent can auto-deliver or request extension */
+    onSessionEnding?(job: Job, reason: string, requestedBy: string): Promise<void>;
 }
 //# sourceMappingURL=types.d.ts.map

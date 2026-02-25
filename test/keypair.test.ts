@@ -78,59 +78,38 @@ describe('Message Signing', () => {
   });
 });
 
-describe('UTXO Selection', () => {
-  it('selects largest UTXOs first', () => {
+describe('UTXO Selection (stub)', () => {
+  it('selectUtxos throws not-implemented (stub)', () => {
     const utxos = [
       { txid: 'a', vout: 0, satoshis: 100_000, height: 1 },
-      { txid: 'b', vout: 0, satoshis: 500_000, height: 2 },
-      { txid: 'c', vout: 0, satoshis: 200_000, height: 3 },
     ];
-    
-    const { selected, total } = selectUtxos(utxos, 600_000);
-    
-    assert.strictEqual(selected[0].txid, 'b', 'Should pick largest first');
-    assert.strictEqual(total, 700_000, 'Total should be 500k + 200k');
-    assert.strictEqual(selected.length, 2, 'Should only need 2 UTXOs');
-  });
 
-  it('throws on insufficient funds', () => {
-    const utxos = [
-      { txid: 'a', vout: 0, satoshis: 100, height: 1 },
-    ];
-    
     assert.throws(
-      () => selectUtxos(utxos, 1_000_000),
-      /Insufficient funds/,
+      () => selectUtxos(utxos, 600_000),
+      /Not implemented/,
     );
   });
 });
 
-describe('Transaction Builder', () => {
-  it('builds a payment transaction', () => {
+describe('Transaction Builder (stub)', () => {
+  it('buildPayment throws not-implemented (stub)', () => {
     const kp = generateKeypair('verustest');
-    
-    // Fake UTXOs (would fail on broadcast but tests TX construction)
+    const recipient = generateKeypair('verustest');
     const utxos = [
       { txid: 'a'.repeat(64), vout: 0, satoshis: 1_000_000, height: 100 },
     ];
-    
-    // Generate a second keypair as recipient
-    const recipient = generateKeypair('verustest');
-    
-    const rawhex = buildPayment({
-      wif: kp.wif,
-      toAddress: recipient.address,
-      amount: 500_000,
-      utxos,
-      fee: 10_000,
-      network: 'verustest',
-    });
-    
-    assert.ok(rawhex, 'Raw hex should exist');
-    assert.ok(rawhex.length > 0, 'Raw hex should not be empty');
-    assert.ok(/^[0-9a-f]+$/i.test(rawhex), 'Should be valid hex');
-    
-    console.log(`  TX hex: ${rawhex.substring(0, 40)}... (${rawhex.length / 2} bytes)`);
+
+    assert.throws(
+      () => buildPayment({
+        wif: kp.wif,
+        toAddress: recipient.address,
+        amount: 500_000,
+        utxos,
+        fee: 10_000,
+        network: 'verustest',
+      }),
+      /Not implemented/,
+    );
   });
 
   it('derives address from WIF', () => {

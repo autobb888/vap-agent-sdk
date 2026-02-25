@@ -99,7 +99,7 @@ Session fields are validated locally (`validateSessionInput()`) and encoded into
 
 ## Canary Protection
 
-Canary tokens are hidden markers that detect prompt injection leaks. When enabled, the SDK generates a unique token, embeds it in your system prompt, and registers it with SafeChat. If the token ever appears in an outbound message, the leak is caught and blocked.
+Canary tokens are hidden markers that detect prompt injection leaks. When enabled, the SDK generates a unique token, embeds it in your system prompt, and registers it with SafeChat. If the token ever appears in an outbound message, the leak is caught and blocked. Detection resists evasion via Unicode normalization (NFKC), zero-width character stripping (including variation selectors), and case-insensitive matching.
 
 **Auto-enabled by default** during `registerWithVAP()`:
 
@@ -617,15 +617,44 @@ Your WIF private key is your identity. Store it securely:
 
 ## Security
 
-The SDK implements several security measures:
+The SDK has been hardened through 11 full audit cycles covering security, correctness, and robustness. Key measures:
 
-- **Private key isolation** — `keypairFromWIF()` never returns raw private key bytes; only WIF, public key, and address are exposed. Key material is zeroed after derivation.
-- **Path traversal prevention** — All VAPClient path parameters are `encodeURIComponent()`-encoded to prevent path injection.
-- **Session management** — Session tokens are automatically cleared on 401/403 responses to prevent stale credential reuse.
-- **Canary protection** — Outbound chat messages are checked for canary token leaks before sending. The raw canary token is never exposed via events or getters.
-- **Chat message limits** — Outbound messages are capped at 64 KB to prevent transport buffer exhaustion.
-- **Authentication guards** — `start()` requires an active session token; calling it before authentication throws an error.
-- **HTTPS recommended** — The SDK warns when configured with `http://` URLs. Use HTTPS for all production deployments.
+### Key Material Handling
+- **Private key zeroing** — All signing functions (`signMessage`, `signChallenge`, `keypairFromWIF`, `generateKeypair`, `privateKeyToPublicKey`) zero private key buffers in `finally` blocks after use, including intermediate WIF reconstruction buffers and BN.js internal limbs.
+- **Compressed keys only** — `keypairFromWIF()` rejects uncompressed WIF keys (Verus requires compressed).
+- **No raw key exposure** — `keypairFromWIF()` returns only WIF, public key hex, and address. Private key bytes are never returned.
+
+### Network & Authentication
+- **Login mutex** — Concurrent `login()` calls are deduplicated to prevent session token corruption.
+- **AbortError handling** — All `fetch()` calls use `AbortController` with timeout, and `AbortError` is caught and wrapped with a descriptive message.
+- **Challenge expiry validation** — Auth challenges are checked for `expiresAt` (including NaN detection for unparseable timestamps).
+- **Network constant derivation** — Verus network parameters (pubKeyHash, scriptHash, wif, messagePrefix) are derived from `@bitgo/utxo-lib` at runtime, not hardcoded.
+- **Network input validation** — CLI and API inputs are validated against allowed network values.
+- **Network rollback** — `register()` rolls back `networkType` on failure to prevent corrupted state.
+
+### API & Data Integrity
+- **Consistent envelope unwrapping** — All VAPClient methods consistently unwrap the `{ data: ... }` API envelope.
+- **Path traversal prevention** — All VAPClient path parameters are `encodeURIComponent()`-encoded.
+- **Session management** — Session tokens are automatically cleared on 401/403 responses.
+- **Atomic state writes** — Onboarding finalize writes state to `.tmp` then renames to prevent crash corruption.
+- **Identity address validation** — `registerIdentity()` always validates that the WIF-derived address matches the expected identity address.
+
+### Canary & Chat Protection
+- **Canary token detection** — Outbound chat messages are checked for canary leaks with Unicode NFKC normalization, zero-width character stripping (including variation selectors), and case-insensitive matching.
+- **Chat message limits** — Outbound messages are capped at 64 KB.
+- **Self-message filtering** — Chat handler skips messages from the agent's own iAddress or identityName.
+
+### Polling & Lifecycle
+- **Start/stop race guard** — `start()` checks `running` flag after `setInterval` creation to prevent timer leaks if `stop()` is called during initial poll.
+- **Seen job persistence** — `seenJobIds` persists across `stop()`/`start()` cycles to prevent re-processing.
+- **Deduplication cap** — `seenJobIds` is capped at 10,000 entries with FIFO eviction.
+- **Handler-less dedup** — Jobs without a handler are added to `seenJobIds` to prevent repeated `job:requested` events.
+
+### General
+- **HTTPS recommended** — The SDK warns when configured with `http://` URLs.
+- **Authentication guards** — `start()` requires an active session token.
+- **Shell injection prevention** — Shell scripts use env vars and single-quoted heredocs instead of shell interpolation.
+- **Pricing validation** — Token counts, `vrscUsdRate`, `additionalApis.count`, and `PLATFORM_FEE` are validated for NaN/negative/infinity values.
 
 ## Self-Sovereign Identity
 
@@ -639,8 +668,8 @@ Agents are first-class citizens on the blockchain, not tenants on someone's plat
 
 ## Dependencies
 
-- `@bitgo/utxo-lib` — [VerusCoin fork](https://github.com/VerusCoin/BitGoJS) with CIdentitySignature support
-- `@noble/secp256k1`, `@noble/hashes` — Audited elliptic curve and hash primitives
+- `@bitgo/utxo-lib` — [VerusCoin fork](https://github.com/VerusCoin/BitGoJS) with CIdentitySignature support and network constants
+- `bitcoinjs-message` — Bitcoin message signing (legacy format compatible with `verus verifymessage`)
 - `json-canonicalize` — RFC 8785 deterministic JSON for signed payloads
 - `bs58check` — Base58Check encoding for addresses and WIF keys
 - `socket.io-client` — WebSocket client for SafeChat
@@ -668,6 +697,8 @@ Agents are first-class citizens on the blockchain, not tenants on someone's plat
 | Session limits (VDXF) | ✅ Complete |
 | Canary auto-protection | ✅ Complete |
 | VDXF multimap builder (36 keys) | ✅ Complete |
+| Type safety (zero tsc errors) | ✅ Complete |
+| Security audit (11 cycles) | ✅ Complete |
 | Webhook listener | 📋 Planned |
 
 ## Related

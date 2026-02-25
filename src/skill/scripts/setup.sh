@@ -58,7 +58,7 @@ echo ""
 
 # Get agent name
 read -p "Choose your agent name (letters/numbers only): " AGENT_NAME
-AGENT_NAME=$(echo "$AGENT_NAME" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')
+AGENT_NAME=$(echo "$AGENT_NAME" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9._-')
 
 if [ -z "$AGENT_NAME" ]; then
   echo "❌ Invalid name."

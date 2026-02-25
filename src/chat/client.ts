@@ -22,12 +22,34 @@ export interface IncomingMessage {
   createdAt: string;
 }
 
-export type MessageHandler = (message: IncomingMessage) => void | Promise<void>;
+export interface SessionEndingEvent {
+  jobId: string;
+  requestedBy: string;
+  reason: string;
+  timestamp: string;
+}
 
-/** Safely invoke a message handler, catching both sync throws and async rejections */
-function safeCallHandler(handler: MessageHandler, msg: IncomingMessage): void {
+export interface SessionExpiringEvent {
+  jobId: string;
+  expiresAt: string;
+  remainingSeconds: number;
+}
+
+export interface JobStatusChangedEvent {
+  jobId: string;
+  status: string;
+  reason?: string;
+}
+
+export type MessageHandler = (message: IncomingMessage) => void | Promise<void>;
+export type SessionEndingHandler = (event: SessionEndingEvent) => void | Promise<void>;
+export type SessionExpiringHandler = (event: SessionExpiringEvent) => void | Promise<void>;
+export type JobStatusChangedHandler = (event: JobStatusChangedEvent) => void | Promise<void>;
+
+/** Safely invoke any async/sync callback, catching both sync throws and async rejections */
+function safeCall(fn: () => void | Promise<void>): void {
   try {
-    const result = handler(msg);
+    const result = fn();
     if (result && typeof (result as Promise<void>).catch === 'function') {
       (result as Promise<void>).catch((e) => console.error('[CHAT] Async handler error:', e));
     }
@@ -45,6 +67,9 @@ export class ChatClient {
   private joinedRooms = new Set<string>();
   private messageHandlers = new Map<string, MessageHandler[]>(); // jobId -> handlers
   private globalHandler: MessageHandler | null = null;
+  private sessionEndingHandler: SessionEndingHandler | null = null;
+  private sessionExpiringHandler: SessionExpiringHandler | null = null;
+  private jobStatusChangedHandler: JobStatusChangedHandler | null = null;
 
   constructor(config: ChatClientConfig) {
     this.config = config;
@@ -63,11 +88,25 @@ export class ChatClient {
     }
 
     // Step 1: Get a one-time chat token via REST API
-    const tokenRes = await fetch(`${this.config.vapUrl}/v1/chat/token`, {
-      headers: {
-        'Cookie': `verus_session=${this.config.sessionToken}`,
-      },
-    });
+    const tokenController = new AbortController();
+    const tokenTimer = setTimeout(() => tokenController.abort(), 15_000);
+    let tokenRes: Response;
+    try {
+      tokenRes = await fetch(`${this.config.vapUrl}/v1/chat/token`, {
+        headers: {
+          'Cookie': `verus_session=${this.config.sessionToken}`,
+        },
+        signal: tokenController.signal,
+      });
+    } catch (err) {
+      clearTimeout(tokenTimer);
+      if ((err as Error).name === 'AbortError') {
+        throw new Error('Chat token request timed out after 15s');
+      }
+      throw err;
+    } finally {
+      clearTimeout(tokenTimer);
+    }
 
     if (!tokenRes.ok) {
       throw new Error(`Failed to get chat token: ${tokenRes.status}`);
@@ -135,12 +174,13 @@ export class ChatClient {
         if (handlers) {
           const snapshot = [...handlers];
           for (const h of snapshot) {
-            safeCallHandler(h, msg);
+            safeCall(() => h(msg));
           }
         }
         // Route to global handler
-        if (this.globalHandler) {
-          safeCallHandler(this.globalHandler, msg);
+        const global = this.globalHandler;
+        if (global) {
+          safeCall(() => global(msg));
         }
       });
 
@@ -154,6 +194,27 @@ export class ChatClient {
 
       this.socket.on('reconnect_failed', () => {
         console.error('[CHAT] All reconnection attempts failed — token may be stale. Call connect() again.');
+      });
+
+      this.socket.on('session_ending', (data: SessionEndingEvent) => {
+        const handler = this.sessionEndingHandler;
+        if (handler) {
+          safeCall(() => handler(data));
+        }
+      });
+
+      this.socket.on('session_expiring', (data: SessionExpiringEvent) => {
+        const handler = this.sessionExpiringHandler;
+        if (handler) {
+          safeCall(() => handler(data));
+        }
+      });
+
+      this.socket.on('job_status_changed', (data: JobStatusChangedEvent) => {
+        const handler = this.jobStatusChangedHandler;
+        if (handler) {
+          safeCall(() => handler(data));
+        }
       });
     });
   }
@@ -186,8 +247,9 @@ export class ChatClient {
     if (!this.socket?.connected) {
       throw new Error('Not connected to chat');
     }
-    if (content.length > MAX_MESSAGE_SIZE) {
-      throw new Error(`Message exceeds maximum size of ${MAX_MESSAGE_SIZE} bytes`);
+    const byteLength = new TextEncoder().encode(content).byteLength;
+    if (byteLength > MAX_MESSAGE_SIZE) {
+      throw new Error(`Message exceeds maximum size of ${MAX_MESSAGE_SIZE} bytes (got ${byteLength})`);
     }
     this.socket.emit('message', { jobId, content, signature });
   }
@@ -206,6 +268,30 @@ export class ChatClient {
    */
   onMessage(handler: MessageHandler): void {
     this.globalHandler = handler;
+  }
+
+  /**
+   * Register a handler for session ending events.
+   * Fired when either party calls POST /v1/jobs/:id/end-session.
+   */
+  onSessionEnding(handler: SessionEndingHandler): void {
+    this.sessionEndingHandler = handler;
+  }
+
+  /**
+   * Register a handler for session expiring events.
+   * Fired 2 minutes before session timeout.
+   */
+  onSessionExpiring(handler: SessionExpiringHandler): void {
+    this.sessionExpiringHandler = handler;
+  }
+
+  /**
+   * Register a handler for job status change events.
+   * Fired on job state transitions (deliver, complete, etc.).
+   */
+  onJobStatusChanged(handler: JobStatusChangedHandler): void {
+    this.jobStatusChangedHandler = handler;
   }
 
   /**
@@ -245,5 +331,8 @@ export class ChatClient {
     this.joinedRooms.clear();
     this.messageHandlers.clear();
     this.globalHandler = null;
+    this.sessionEndingHandler = null;
+    this.sessionExpiringHandler = null;
+    this.jobStatusChangedHandler = null;
   }
 }

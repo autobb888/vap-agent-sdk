@@ -5,9 +5,6 @@
 
 import * as crypto from 'crypto';
 import bs58check from 'bs58check';
-import * as secp256k1 from '@noble/secp256k1';
-import { sha256 } from '@noble/hashes/sha2.js';
-import { hmac } from '@noble/hashes/hmac.js';
 import * as bitcoinMessage from 'bitcoinjs-message';
 
 // @ts-ignore - VerusCoin fork
@@ -18,32 +15,19 @@ const ECPair = utxolib.ECPair;
 const IdentitySignature = utxolib.IdentitySignature;
 const networks = utxolib.networks;
 
-// Verus network constants
+// Derive network constants from utxolib to avoid hardcoded drift
 const VERUS_NETWORK = {
-  // bitcoinjs-message style prefix includes leading compact-size byte
-  messagePrefix: '\x15Verus signed data:\n',
-  pubKeyHash: 0x3c,
-  scriptHash: 0x3b,
-  wif: 0xbc,
+  messagePrefix: (networks.verustest as { messagePrefix: string }).messagePrefix || '\x15Verus signed data:\n',
+  pubKeyHash: (networks.verustest as { pubKeyHash: number }).pubKeyHash,
+  scriptHash: (networks.verustest as { scriptHash: number }).scriptHash,
+  wif: (networks.verustest as { wif: number }).wif,
 };
 
 const VERUS_MAINNET = {
-  messagePrefix: '\x15Verus signed data:\n',
-  pubKeyHash: 0x3b,
-  scriptHash: 0x3c,
-  wif: 0x80,
-};
-
-// Configure noble secp256k1 hash functions
-secp256k1.hashes.sha256 = (...msgs: Uint8Array[]) => {
-  const hasher = sha256.create();
-  for (const msg of msgs) hasher.update(msg);
-  return hasher.digest();
-};
-secp256k1.hashes.hmacSha256 = (key: Uint8Array, ...msgs: Uint8Array[]) => {
-  const hasher = hmac.create(sha256, key);
-  for (const msg of msgs) hasher.update(msg);
-  return hasher.digest();
+  messagePrefix: (networks.verus as { messagePrefix: string }).messagePrefix || '\x15Verus signed data:\n',
+  pubKeyHash: (networks.verus as { pubKeyHash: number }).pubKeyHash,
+  scriptHash: (networks.verus as { scriptHash: number }).scriptHash,
+  wif: (networks.verus as { wif: number }).wif,
 };
 
 /**
@@ -71,10 +55,21 @@ function wifToPrivateKey(wif: string): Uint8Array {
 /**
  * Get public key from private key
  */
-function privateKeyToPublicKey(privKey: Uint8Array, compressed: boolean = true): Uint8Array {
-  const network = { ...VERUS_NETWORK, bip32: { public: 0x0488b21e, private: 0x0488ade4 } };
-  const keyPair = ECPair.fromWIF(bs58check.encode(Buffer.concat([Buffer.from([network.wif]), privKey, Buffer.from([0x01])])), network);
-  return new Uint8Array(keyPair.getPublicKeyBuffer());
+function privateKeyToPublicKey(privKey: Uint8Array, compressed: boolean = true, networkName: 'verus' | 'verustest' = 'verustest'): Uint8Array {
+  const networkConfig = networkName === 'verustest' ? VERUS_NETWORK : VERUS_MAINNET;
+  const network = { ...networkConfig, bip32: { public: 0x0488b21e, private: 0x0488ade4 } };
+  const privBuf = Buffer.from(privKey);
+  const parts = [Buffer.from([network.wif]), privBuf];
+  if (compressed) parts.push(Buffer.from([0x01]));
+  const wifBuf = Buffer.concat(parts);
+  try {
+    const keyPair = ECPair.fromWIF(bs58check.encode(wifBuf), network);
+    return new Uint8Array(keyPair.getPublicKeyBuffer());
+  } finally {
+    // Zero intermediate buffers that contain private key material
+    privBuf.fill(0);
+    wifBuf.fill(0);
+  }
 }
 
 /**
@@ -90,7 +85,7 @@ function hash160(data: Uint8Array): Uint8Array {
  * Private key to R-address
  */
 function privateKeyToAddress(privKey: Uint8Array, network: 'verus' | 'verustest' = 'verustest'): string {
-  const pubkey = privateKeyToPublicKey(privKey, true);
+  const pubkey = privateKeyToPublicKey(privKey, true, network);
   const hash = hash160(pubkey);
   const version = network === 'verustest' ? VERUS_NETWORK.pubKeyHash : VERUS_MAINNET.pubKeyHash;
   const payload = Buffer.concat([Buffer.from([version]), hash]);
@@ -107,16 +102,23 @@ export function signMessage(
 ): string {
   const networkConfig = network === 'verustest' ? VERUS_NETWORK : VERUS_MAINNET;
   const { privateKey, compressed } = decodeWif(wif);
+  const privKeyBuf = Buffer.from(privateKey);
 
-  // Use bitcoinjs-message implementation (same magic-hash/signature format used by BitGoJS/verifymessage)
-  const sig = bitcoinMessage.sign(
-    message,
-    Buffer.from(privateKey),
-    compressed,
-    networkConfig.messagePrefix,
-  );
+  try {
+    // Use bitcoinjs-message implementation (same magic-hash/signature format used by BitGoJS/verifymessage)
+    const sig = bitcoinMessage.sign(
+      message,
+      privKeyBuf,
+      compressed,
+      networkConfig.messagePrefix,
+    );
 
-  return Buffer.from(sig).toString('base64');
+    return Buffer.from(sig).toString('base64');
+  } finally {
+    // Zero private key material
+    privateKey.fill(0);
+    privKeyBuf.fill(0);
+  }
 }
 
 /**
@@ -151,31 +153,54 @@ export function signChallenge(
   // Get keyPair from WIF
   const keyPair = ECPair.fromWIF(wif, networkObj);
 
-  // Create IdentitySignature (version=2, hashType=5 SHA256, blockHeight=0)
-  const idSig = new IdentitySignature(
-    networkObj,
-    2,    // version
-    5,    // hashType (SHA256)
-    0,    // blockHeight
-    [],   // signatures (will be filled by sign)
-    chainId, // chain ID (required!)
-    signingIdentity // identity (i-address or null for R-address)
-  );
+  try {
+    // Create IdentitySignature (version=2, hashType=5 SHA256, blockHeight=0)
+    const idSig = new IdentitySignature(
+      networkObj,
+      2,    // version
+      5,    // hashType (SHA256)
+      0,    // blockHeight
+      [],   // signatures (will be filled by sign)
+      chainId, // chain ID (required!)
+      signingIdentity // identity (i-address or null for R-address)
+    );
 
-  // Sign the message
-  idSig.signMessageOffline(challenge, keyPair);
-  
-  // Return compact signature (65 bytes) for both R-address and i-address
-  // Server verifymessage expects 65-byte compact signature
-  return idSig.signatures[0].toString('base64');
+    // Sign the message
+    idSig.signMessageOffline(challenge, keyPair);
+
+    if (!idSig.signatures?.length) {
+      throw new Error('signMessageOffline produced no signatures');
+    }
+
+    // Return serialized CIdentitySignature
+    return idSig.signatures[0].toString('base64');
+  } finally {
+    // Zero internal key material (best-effort: BN.js internal words array + buffer copy)
+    const d = keyPair.d;
+    if (d) {
+      // Zero the BN.js internal limbs array
+      if (d.words && Array.isArray(d.words)) {
+        d.words.fill(0);
+      }
+      // Also zero a buffer copy for completeness
+      if (typeof d.toBuffer === 'function') {
+        const buf = d.toBuffer(32);
+        buf.fill(0);
+      }
+    }
+  }
 }
 
 /**
  * Generate keypair from WIF
  */
 export function keypairFromWIF(wif: string, network: 'verus' | 'verustest' = 'verustest') {
-  const privKey = wifToPrivateKey(wif);
-  const pubkey = privateKeyToPublicKey(privKey, true);
+  const { privateKey, compressed } = decodeWif(wif);
+  if (!compressed) {
+    throw new Error('Uncompressed WIF keys are not supported; Verus requires compressed keys');
+  }
+  const privKey = privateKey;
+  const pubkey = privateKeyToPublicKey(privKey, true, network);
   const address = privateKeyToAddress(privKey, network);
 
   // Zero the private key material after deriving public key + address

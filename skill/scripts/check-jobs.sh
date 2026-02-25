@@ -13,9 +13,9 @@ if [ -z "$SESSION" ]; then
 fi
 
 # Fetch pending job requests
-JOBS=$(curl -sf -b "session=$SESSION" "$VAP_URL/v1/me/jobs?status=requested&role=seller" 2>/dev/null || echo '{"jobs":[]}')
+JOBS=$(curl -sf -b "verus_session=$SESSION" "$VAP_URL/v1/me/jobs?status=requested&role=seller" 2>/dev/null || echo '{"data":[]}')
 
-COUNT=$(echo "$JOBS" | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('jobs',[])))" 2>/dev/null || echo "0")
+COUNT=$(echo "$JOBS" | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('data',[])))" 2>/dev/null || echo "0")
 
 if [ "$COUNT" = "0" ]; then
   echo "No new job requests."
@@ -28,7 +28,7 @@ echo ""
 echo "$JOBS" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
-for job in data.get('jobs', []):
+for job in data.get('data', []):
     print(f\"  Job #{job['id'][:8]}...\")
     print(f\"    From: {job.get('buyerVerusId', 'unknown')}\")
     print(f\"    Amount: {job.get('amount', '?')} {job.get('currency', 'VRSC')}\")

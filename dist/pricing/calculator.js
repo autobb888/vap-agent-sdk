@@ -39,6 +39,13 @@ function privacyPremium(basePrice, tier) {
  * @returns Raw cost in USD
  */
 function estimateJobCost(model, inputTokens, outputTokens, additionalApis) {
+    // Validate token counts
+    if (!Number.isFinite(inputTokens) || inputTokens < 0) {
+        throw new Error(`inputTokens must be a non-negative finite number, got: ${inputTokens}`);
+    }
+    if (!Number.isFinite(outputTokens) || outputTokens < 0) {
+        throw new Error(`outputTokens must be a non-negative finite number, got: ${outputTokens}`);
+    }
     // Find model in cost table
     const modelCost = tables_js_1.LLM_COSTS.find(m => m.model === model);
     if (!modelCost) {
@@ -51,6 +58,9 @@ function estimateJobCost(model, inputTokens, outputTokens, additionalApis) {
     let apiCost = 0;
     if (additionalApis) {
         for (const { api, count } of additionalApis) {
+            if (!Number.isFinite(count) || count < 0) {
+                throw new Error(`API call count for "${api}" must be a non-negative finite number, got: ${count}`);
+            }
             const apiEntry = tables_js_1.API_COSTS.find(a => a.api === api);
             if (apiEntry) {
                 apiCost += apiEntry.costPerRequest * count;
@@ -70,6 +80,10 @@ function estimateJobCost(model, inputTokens, outputTokens, additionalApis) {
  */
 function recommendPrice(params) {
     const { model, inputTokens, outputTokens, category, privacyTier = 'standard', vrscUsdRate = 1.0, additionalApis, } = params;
+    // Validate VRSC/USD rate
+    if (vrscUsdRate <= 0 || !Number.isFinite(vrscUsdRate)) {
+        throw new Error(`vrscUsdRate must be a finite positive number, got: ${vrscUsdRate}`);
+    }
     // Calculate raw cost
     const rawCost = estimateJobCost(model, inputTokens, outputTokens, additionalApis);
     // Apply privacy premium to base cost
@@ -81,9 +95,12 @@ function recommendPrice(params) {
         throw new Error(`Unknown category: ${category}. Available: ${Object.keys(tables_js_1.CATEGORY_MARKUPS).join(', ')}`);
     }
     // Calculate price points
-    const feeMultiplier = 1 + tables_js_1.PLATFORM_FEE; // 1.05
-    // Minimum: adjusted cost + platform fee (break-even)
-    const minUsd = adjustedCost * feeMultiplier;
+    // Minimum: seller needs adjustedCost after platform deducts PLATFORM_FEE from listed price
+    // If listed = adjustedCost / (1 - fee), seller receives listed * (1 - fee) = adjustedCost
+    if (tables_js_1.PLATFORM_FEE >= 1) {
+        throw new Error('PLATFORM_FEE must be less than 1 (100%)');
+    }
+    const minUsd = adjustedCost / (1 - tables_js_1.PLATFORM_FEE);
     // Recommended: midpoint of category markup
     const midMarkup = (markup.min + markup.max) / 2;
     const recUsd = adjustedCost * midMarkup;
@@ -98,7 +115,7 @@ function recommendPrice(params) {
     });
     return {
         rawCost: round(rawCost, 6),
-        platformFee: round(rawCost * tables_js_1.PLATFORM_FEE, 6),
+        platformFee: round(adjustedCost * tables_js_1.PLATFORM_FEE, 6),
         privacyMultiplier: multiplier,
         minimum: makePricePoint(minUsd),
         recommended: makePricePoint(recUsd),

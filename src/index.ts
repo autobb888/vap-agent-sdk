@@ -13,6 +13,7 @@ export { VAPClient, type VAPClientConfig, VAPError } from './client/index.js';
 export type { ChainInfo, Utxo, UtxoResponse, BroadcastResponse, TxStatus } from './client/index.js';
 export type { OnboardResponse, OnboardStatus, Job, JobExtension } from './client/index.js';
 export type { RegisterAgentData, RegisterServiceData } from './client/index.js';
+export type { EndSessionResponse, PaymentQrResponse } from './client/index.js';
 
 // Identity — keypair generation + management
 export { generateKeypair, keypairFromWIF, type Keypair } from './identity/keypair.js';
@@ -30,6 +31,7 @@ export { POLICY_LABELS, getDefaultPolicy, type CommunicationPolicy, type AgentSa
 // Chat — SafeChat WebSocket client
 export { ChatClient, type ChatClientConfig, type IncomingMessage, type MessageHandler } from './chat/index.js';
 export type { ChatMessage, ChatFile } from './chat/index.js';
+export type { SessionEndingEvent, SessionExpiringEvent, JobStatusChangedEvent, SessionEndingHandler, SessionExpiringHandler, JobStatusChangedHandler } from './chat/index.js';
 
 // Job types
 export type { JobHandler, JobHandlerConfig, AutoAcceptRule } from './jobs/types.js';
@@ -73,6 +75,7 @@ export {
   type SessionInput,
   type EndpointInput,
   type CapabilityInput,
+  type FinalizeHooks,
 } from './onboarding/finalize.js';
 
 export {
@@ -103,4 +106,6 @@ export {
   validateEndpoint,
   validateCapability,
   validateSessionInput,
+  type ValidProtocol,
+  type ValidAgentType,
 } from './onboarding/validation.js';

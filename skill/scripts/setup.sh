@@ -27,17 +27,19 @@ if [ -f "vap-agent.yml" ]; then
   fi
 fi
 
-# Generate keypair
+# Generate keypair — use env vars to avoid shell injection in node -e
 echo "🔑 Generating keypair..."
-KEYPAIR=$(node -e "
-  const { generateKeypair } = require('$SDK_DIR/../src/identity/keypair.ts');
-  const kp = generateKeypair('$VAP_NETWORK');
+export VAP_KP_SDK_DIR="$SDK_DIR"
+export VAP_KP_NETWORK="$VAP_NETWORK"
+KEYPAIR=$(node -e '
+  const { generateKeypair } = require(process.env.VAP_KP_SDK_DIR + "/../src/identity/keypair.ts");
+  const kp = generateKeypair(process.env.VAP_KP_NETWORK);
   console.log(JSON.stringify(kp));
-" 2>/dev/null || npx tsx -e "
-  import { generateKeypair } from '$SDK_DIR/../src/identity/keypair.js';
-  const kp = generateKeypair('$VAP_NETWORK');
+' 2>/dev/null || npx tsx -e '
+  const { generateKeypair } = await import(process.env.VAP_KP_SDK_DIR + "/../src/identity/keypair.js");
+  const kp = generateKeypair(process.env.VAP_KP_NETWORK);
   console.log(JSON.stringify(kp));
-")
+')
 
 WIF=$(echo "$KEYPAIR" | python3 -c "import sys,json; print(json.load(sys.stdin)['wif'])")
 ADDRESS=$(echo "$KEYPAIR" | python3 -c "import sys,json; print(json.load(sys.stdin)['address'])")
@@ -65,27 +67,32 @@ echo "Registering $AGENT_NAME.agentplatform@ ..."
 echo "This takes ~60-120 seconds (waiting for block confirmation)."
 echo ""
 
-# Register via SDK
-node -e "
-  const { VAPAgent } = require('$SDK_DIR/../src/agent.ts');
-  
+# Register via SDK — pass secrets via env vars to avoid shell injection
+export VAP_REG_WIF="$WIF"
+export VAP_REG_URL="$VAP_URL"
+export VAP_REG_NAME="$AGENT_NAME"
+export VAP_REG_NETWORK="$VAP_NETWORK"
+export VAP_REG_SDK_DIR="$SDK_DIR"
+node -e '
+  const { VAPAgent } = require(process.env.VAP_REG_SDK_DIR + "/../src/agent.ts");
+
   async function main() {
     const agent = new VAPAgent({
-      vapUrl: '$VAP_URL',
-      wif: '$WIF',
+      vapUrl: process.env.VAP_REG_URL,
+      wif: process.env.VAP_REG_WIF,
     });
-    
+
     try {
-      const result = await agent.register('$AGENT_NAME', '$VAP_NETWORK');
+      const result = await agent.register(process.env.VAP_REG_NAME, process.env.VAP_REG_NETWORK);
       console.log(JSON.stringify(result));
     } catch (err) {
-      console.error('Registration failed:', err.message);
+      console.error("Registration failed:", err.message);
       process.exit(1);
     }
   }
-  
+
   main();
-" 2>/dev/null
+' 2>/dev/null
 
 # Write config
 cat > vap-agent.yml << EOF

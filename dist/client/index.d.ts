@@ -18,6 +18,7 @@ export declare class VAPClient {
     private timeout;
     constructor(config: VAPClientConfig);
     setSessionToken(token: string): void;
+    clearSessionToken(): void;
     getSessionToken(): string | null;
     getBaseUrl(): string;
     private request;
@@ -61,11 +62,11 @@ export declare class VAPClient {
     onboardWithSignature(name: string, address: string, pubkey: string, challenge: string, token: string, signature: string): Promise<OnboardResponse>;
     /** Check onboarding status */
     onboardStatus(id: string): Promise<OnboardStatus>;
-    /** Register agent profile */
+    /** Register agent profile (signed payload, requires cookie auth) */
     registerAgent(data: RegisterAgentData): Promise<{
         agentId: string;
     }>;
-    /** Register a service */
+    /** Register a service (requires cookie auth) */
     registerService(data: RegisterServiceData): Promise<{
         serviceId: string;
     }>;
@@ -74,16 +75,15 @@ export declare class VAPClient {
         status?: string;
         role?: 'buyer' | 'seller';
     }): Promise<{
-        jobs: Job[];
+        data: Job[];
+        meta?: Record<string, unknown>;
     }>;
     /** Accept a job */
-    acceptJob(jobId: string, signature: string, timestamp: number): Promise<{
-        status: string;
-    }>;
+    acceptJob(jobId: string, signature: string, timestamp: number): Promise<Job>;
     /** Deliver a job */
-    deliverJob(jobId: string, signature: string, message: string, content?: string): Promise<{
-        status: string;
-    }>;
+    deliverJob(jobId: string, deliveryHash: string, signature: string, timestamp: number, deliveryMessage?: string): Promise<Job>;
+    /** Complete a job (buyer confirms delivery) */
+    completeJob(jobId: string, signature: string, timestamp: number): Promise<Job>;
     /** Get job details */
     getJob(jobId: string): Promise<Job>;
     /** Register a canary token so SafeChat watches for leaks */
@@ -101,13 +101,46 @@ export declare class VAPClient {
         status: string;
     }>;
     /** Get chat messages for a job */
-    getChatMessages(jobId: string, limit?: number): Promise<{
-        messages: ChatMessage[];
+    getChatMessages(jobId: string, params?: {
+        limit?: number;
+        offset?: number;
+        since?: string;
+    }): Promise<{
+        data: ChatMessage[];
+        meta: {
+            total: number;
+            limit: number;
+            offset: number;
+        };
     }>;
     /** Send a chat message */
-    sendChatMessage(jobId: string, content: string): Promise<{
-        messageId: string;
+    sendChatMessage(jobId: string, content: string, signature?: string): Promise<ChatMessage>;
+    /** Request end of session (buyer or seller) */
+    requestEndSession(jobId: string, reason?: string): Promise<EndSessionResponse>;
+    /** Record agent payment txid (buyer submits after sending VRSC) */
+    recordPayment(jobId: string, txid: string): Promise<{
+        data: Job;
+        meta: {
+            verificationNote: string;
+        };
     }>;
+    /** Record platform fee txid (buyer submits after sending fee) */
+    recordPlatformFee(jobId: string, txid: string): Promise<{
+        data: Job;
+        meta: {
+            verificationNote: string;
+        };
+    }>;
+    /** Cancel a job (buyer only, must be in 'requested' status) */
+    cancelJob(jobId: string): Promise<Job>;
+    /** Dispute a job (buyer or seller, signed) */
+    disputeJob(jobId: string, reason: string, signature: string, timestamp: number): Promise<Job>;
+    /** Get payment QR code data for a job */
+    getPaymentQr(jobId: string, type?: 'agent' | 'fee'): Promise<PaymentQrResponse>;
+    /** Get job by hash (public) */
+    getJobByHash(hash: string): Promise<Job>;
+    /** Get jobs with unread messages */
+    getUnreadJobs(): Promise<Job[]>;
     /** Update agent profile (privacy tier, etc.) */
     updateAgentProfile(data: {
         privacyTier?: string;
@@ -116,33 +149,23 @@ export declare class VAPClient {
         status: string;
     }>;
     /** Request a session extension (additional payment for more work) */
-    requestExtension(jobId: string, amount: number, reason?: string): Promise<{
-        data: JobExtension;
-    }>;
+    requestExtension(jobId: string, amount: number, reason?: string): Promise<JobExtension>;
     /** Get extensions for a job */
-    getExtensions(jobId: string): Promise<{
-        data: JobExtension[];
-    }>;
+    getExtensions(jobId: string): Promise<JobExtension[]>;
     /** Approve an extension request */
     approveExtension(jobId: string, extensionId: string): Promise<{
-        data: {
-            id: string;
-            status: string;
-        };
+        id: string;
+        status: string;
     }>;
     /** Reject an extension request */
     rejectExtension(jobId: string, extensionId: string): Promise<{
-        data: {
-            id: string;
-            status: string;
-        };
+        id: string;
+        status: string;
     }>;
     /** Submit extension payment txids */
     payExtension(jobId: string, extensionId: string, agentTxid?: string, feeTxid?: string): Promise<{
-        data: {
-            id: string;
-            status: string;
-        };
+        id: string;
+        status: string;
     }>;
     /** Submit a deletion attestation */
     submitAttestation(attestation: DeletionAttestation): Promise<{
@@ -202,7 +225,7 @@ export interface TxStatus {
     confirmed: boolean;
 }
 export interface OnboardResponse {
-    status: string;
+    status: 'challenge' | 'pending' | 'confirming' | 'registered' | 'failed';
     onboardId: string;
     identity?: string;
     iAddress?: string;
@@ -259,23 +282,58 @@ export interface Job {
     status: 'requested' | 'accepted' | 'in_progress' | 'delivered' | 'completed' | 'disputed' | 'cancelled';
     buyerVerusId: string;
     sellerVerusId: string;
-    serviceId?: string;
+    serviceId?: string | null;
     description: string;
     amount: number;
     currency: string;
+    deadline?: string | null;
     safechatEnabled?: boolean;
     payment?: {
-        terms: string;
-        address?: string;
-        txid?: string;
+        terms: 'prepay' | 'postpay' | 'split';
+        address?: string | null;
+        txid?: string | null;
         verified: boolean;
-        platformFeeTxid?: string;
+        platformFeeTxid?: string | null;
         platformFeeVerified: boolean;
         platformFeeAddress?: string;
+        feeRate?: number;
         feeAmount?: number;
+    };
+    signatures?: {
+        request?: string | null;
+        acceptance?: string | null;
+        delivery?: string | null;
+        completion?: string | null;
+    };
+    delivery?: {
+        hash?: string;
+        message?: string;
+    };
+    timestamps?: {
+        requested?: string | null;
+        accepted?: string | null;
+        delivered?: string | null;
+        completed?: string | null;
+        created?: string | null;
+        updated?: string | null;
     };
     createdAt: string;
     updatedAt: string;
+}
+export interface EndSessionResponse {
+    jobId: string;
+    status: 'end_session_requested';
+    requestedBy: string;
+    reason: string;
+    timestamp: string;
+}
+export interface PaymentQrResponse {
+    type: 'agent' | 'fee';
+    address: string;
+    amount: number;
+    currency: string;
+    qrString: string;
+    deeplink: string;
 }
 export interface JobExtension {
     id: string;
@@ -293,6 +351,7 @@ export interface ChatMessage {
     jobId: string;
     senderVerusId: string;
     content: string;
+    type?: 'text' | 'file' | 'system';
     createdAt: string;
 }
 //# sourceMappingURL=index.d.ts.map

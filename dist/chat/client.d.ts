@@ -17,14 +17,35 @@ export interface IncomingMessage {
     safetyScore: number | null;
     createdAt: string;
 }
+export interface SessionEndingEvent {
+    jobId: string;
+    requestedBy: string;
+    reason: string;
+    timestamp: string;
+}
+export interface SessionExpiringEvent {
+    jobId: string;
+    expiresAt: string;
+    remainingSeconds: number;
+}
+export interface JobStatusChangedEvent {
+    jobId: string;
+    status: string;
+    reason?: string;
+}
 export type MessageHandler = (message: IncomingMessage) => void | Promise<void>;
+export type SessionEndingHandler = (event: SessionEndingEvent) => void | Promise<void>;
+export type SessionExpiringHandler = (event: SessionExpiringEvent) => void | Promise<void>;
+export type JobStatusChangedHandler = (event: JobStatusChangedEvent) => void | Promise<void>;
 export declare class ChatClient {
     private socket;
     private config;
     private joinedRooms;
     private messageHandlers;
     private globalHandler;
-    private connected;
+    private sessionEndingHandler;
+    private sessionExpiringHandler;
+    private jobStatusChangedHandler;
     constructor(config: ChatClientConfig);
     /**
      * Connect to the chat server.
@@ -52,6 +73,21 @@ export declare class ChatClient {
      */
     onMessage(handler: MessageHandler): void;
     /**
+     * Register a handler for session ending events.
+     * Fired when either party calls POST /v1/jobs/:id/end-session.
+     */
+    onSessionEnding(handler: SessionEndingHandler): void;
+    /**
+     * Register a handler for session expiring events.
+     * Fired 2 minutes before session timeout.
+     */
+    onSessionExpiring(handler: SessionExpiringHandler): void;
+    /**
+     * Register a handler for job status change events.
+     * Fired on job state transitions (deliver, complete, etc.).
+     */
+    onJobStatusChanged(handler: JobStatusChangedHandler): void;
+    /**
      * Send a typing indicator.
      */
     sendTyping(jobId: string): void;
@@ -60,7 +96,7 @@ export declare class ChatClient {
      */
     markRead(jobId: string): void;
     /**
-     * Check if connected.
+     * Check if connected (uses Socket.IO's own state as source of truth).
      */
     get isConnected(): boolean;
     /**

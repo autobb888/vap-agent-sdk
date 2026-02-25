@@ -46,9 +46,6 @@ exports.keypairFromWIF = keypairFromWIF;
 exports.generateKeypair = generateKeypair;
 const crypto = __importStar(require("crypto"));
 const bs58check_1 = __importDefault(require("bs58check"));
-const secp256k1 = __importStar(require("@noble/secp256k1"));
-const sha2_js_1 = require("@noble/hashes/sha2.js");
-const hmac_js_1 = require("@noble/hashes/hmac.js");
 const bitcoinMessage = __importStar(require("bitcoinjs-message"));
 // @ts-ignore - VerusCoin fork
 const utxolib = __importStar(require("@bitgo/utxo-lib"));
@@ -56,32 +53,18 @@ const utxolib = __importStar(require("@bitgo/utxo-lib"));
 const ECPair = utxolib.ECPair;
 const IdentitySignature = utxolib.IdentitySignature;
 const networks = utxolib.networks;
-// Verus network constants
+// Derive network constants from utxolib to avoid hardcoded drift
 const VERUS_NETWORK = {
-    // bitcoinjs-message style prefix includes leading compact-size byte
-    messagePrefix: '\x15Verus signed data:\n',
-    pubKeyHash: 0x3c,
-    scriptHash: 0x3b,
-    wif: 0xbc,
+    messagePrefix: networks.verustest.messagePrefix || '\x15Verus signed data:\n',
+    pubKeyHash: networks.verustest.pubKeyHash,
+    scriptHash: networks.verustest.scriptHash,
+    wif: networks.verustest.wif,
 };
 const VERUS_MAINNET = {
-    messagePrefix: '\x15Verus signed data:\n',
-    pubKeyHash: 0x3b,
-    scriptHash: 0x3c,
-    wif: 0x80,
-};
-// Configure noble secp256k1 hash functions
-secp256k1.hashes.sha256 = (...msgs) => {
-    const hasher = sha2_js_1.sha256.create();
-    for (const msg of msgs)
-        hasher.update(msg);
-    return hasher.digest();
-};
-secp256k1.hashes.hmacSha256 = (key, ...msgs) => {
-    const hasher = hmac_js_1.hmac.create(sha2_js_1.sha256, key);
-    for (const msg of msgs)
-        hasher.update(msg);
-    return hasher.digest();
+    messagePrefix: networks.verus.messagePrefix || '\x15Verus signed data:\n',
+    pubKeyHash: networks.verus.pubKeyHash,
+    scriptHash: networks.verus.scriptHash,
+    wif: networks.verus.wif,
 };
 /**
  * Decode WIF to private key
@@ -106,10 +89,23 @@ function wifToPrivateKey(wif) {
 /**
  * Get public key from private key
  */
-function privateKeyToPublicKey(privKey, compressed = true) {
-    const network = { ...VERUS_NETWORK, bip32: { public: 0x0488b21e, private: 0x0488ade4 } };
-    const keyPair = ECPair.fromWIF(bs58check_1.default.encode(Buffer.concat([Buffer.from([network.wif]), privKey, Buffer.from([0x01])])), network);
-    return new Uint8Array(keyPair.getPublicKeyBuffer());
+function privateKeyToPublicKey(privKey, compressed = true, networkName = 'verustest') {
+    const networkConfig = networkName === 'verustest' ? VERUS_NETWORK : VERUS_MAINNET;
+    const network = { ...networkConfig, bip32: { public: 0x0488b21e, private: 0x0488ade4 } };
+    const privBuf = Buffer.from(privKey);
+    const parts = [Buffer.from([network.wif]), privBuf];
+    if (compressed)
+        parts.push(Buffer.from([0x01]));
+    const wifBuf = Buffer.concat(parts);
+    try {
+        const keyPair = ECPair.fromWIF(bs58check_1.default.encode(wifBuf), network);
+        return new Uint8Array(keyPair.getPublicKeyBuffer());
+    }
+    finally {
+        // Zero intermediate buffers that contain private key material
+        privBuf.fill(0);
+        wifBuf.fill(0);
+    }
 }
 /**
  * Hash160 (RIPEMD160(SHA256(data)))
@@ -123,28 +119,11 @@ function hash160(data) {
  * Private key to R-address
  */
 function privateKeyToAddress(privKey, network = 'verustest') {
-    const pubkey = privateKeyToPublicKey(privKey, true);
+    const pubkey = privateKeyToPublicKey(privKey, true, network);
     const hash = hash160(pubkey);
     const version = network === 'verustest' ? VERUS_NETWORK.pubKeyHash : VERUS_MAINNET.pubKeyHash;
     const payload = Buffer.concat([Buffer.from([version]), hash]);
     return bs58check_1.default.encode(payload);
-}
-/**
- * Encode varint
- */
-function encodeVarInt(n) {
-    if (n < 0xfd)
-        return Buffer.from([n]);
-    if (n <= 0xffff) {
-        const buf = Buffer.alloc(3);
-        buf[0] = 0xfd;
-        buf.writeUInt16LE(n, 1);
-        return buf;
-    }
-    const buf = Buffer.alloc(5);
-    buf[0] = 0xfe;
-    buf.writeUInt32LE(n, 1);
-    return buf;
 }
 /**
  * Sign a message (legacy format compatible with verus verifymessage)
@@ -152,9 +131,17 @@ function encodeVarInt(n) {
 function signMessage(wif, message, network = 'verustest') {
     const networkConfig = network === 'verustest' ? VERUS_NETWORK : VERUS_MAINNET;
     const { privateKey, compressed } = decodeWif(wif);
-    // Use bitcoinjs-message implementation (same magic-hash/signature format used by BitGoJS/verifymessage)
-    const sig = bitcoinMessage.sign(message, Buffer.from(privateKey), compressed, networkConfig.messagePrefix);
-    return Buffer.from(sig).toString('base64');
+    const privKeyBuf = Buffer.from(privateKey);
+    try {
+        // Use bitcoinjs-message implementation (same magic-hash/signature format used by BitGoJS/verifymessage)
+        const sig = bitcoinMessage.sign(message, privKeyBuf, compressed, networkConfig.messagePrefix);
+        return Buffer.from(sig).toString('base64');
+    }
+    finally {
+        // Zero private key material
+        privateKey.fill(0);
+        privKeyBuf.fill(0);
+    }
 }
 /**
  * Sign a challenge (CIdentitySignature format)
@@ -179,49 +166,54 @@ function signChallenge(wif, challenge, identityAddress, network = 'verustest') {
         ? chainId // Onboarding: use chainId as identity
         : identityAddress; // Login/registration: use i-address
     // Get keyPair from WIF
-    let keyPair;
+    const keyPair = ECPair.fromWIF(wif, networkObj);
     try {
-        keyPair = ECPair.fromWIF(wif, networkObj);
-    }
-    catch (err) {
-        throw err;
-    }
-    // Create IdentitySignature
-    // version=2, hashType=5 (SHA256), blockHeight=0
-    // chainId already defined above
-    let idSig;
-    try {
-        idSig = new IdentitySignature(networkObj, 2, // version
+        // Create IdentitySignature (version=2, hashType=5 SHA256, blockHeight=0)
+        const idSig = new IdentitySignature(networkObj, 2, // version
         5, // hashType (SHA256)
         0, // blockHeight
         [], // signatures (will be filled by sign)
         chainId, // chain ID (required!)
         signingIdentity // identity (i-address or null for R-address)
         );
-    }
-    catch (err) {
-        throw err;
-    }
-    // Sign the message
-    try {
+        // Sign the message
         idSig.signMessageOffline(challenge, keyPair);
+        if (!idSig.signatures?.length) {
+            throw new Error('signMessageOffline produced no signatures');
+        }
+        // Return serialized CIdentitySignature
+        return idSig.signatures[0].toString('base64');
     }
-    catch (err) {
-        throw err;
+    finally {
+        // Zero internal key material (best-effort: BN.js internal words array + buffer copy)
+        const d = keyPair.d;
+        if (d) {
+            // Zero the BN.js internal limbs array
+            if (d.words && Array.isArray(d.words)) {
+                d.words.fill(0);
+            }
+            // Also zero a buffer copy for completeness
+            if (typeof d.toBuffer === 'function') {
+                const buf = d.toBuffer(32);
+                buf.fill(0);
+            }
+        }
     }
-    // Return compact signature (65 bytes) for both R-address and i-address
-    // Server verifymessage expects 65-byte compact signature
-    return idSig.signatures[0].toString('base64');
 }
 /**
  * Generate keypair from WIF
  */
 function keypairFromWIF(wif, network = 'verustest') {
-    const privKey = wifToPrivateKey(wif);
-    const pubkey = privateKeyToPublicKey(privKey, true);
+    const { privateKey, compressed } = decodeWif(wif);
+    if (!compressed) {
+        throw new Error('Uncompressed WIF keys are not supported; Verus requires compressed keys');
+    }
+    const privKey = privateKey;
+    const pubkey = privateKeyToPublicKey(privKey, true, network);
     const address = privateKeyToAddress(privKey, network);
+    // Zero the private key material after deriving public key + address
+    privKey.fill(0);
     return {
-        privateKey: Buffer.from(privKey).toString('hex'),
         publicKey: Buffer.from(pubkey).toString('hex'),
         address,
         wif,
@@ -235,6 +227,9 @@ function generateKeypair(network = 'verustest') {
     const wifVersion = network === 'verustest' ? VERUS_NETWORK.wif : VERUS_MAINNET.wif;
     const wifPayload = Buffer.concat([Buffer.from([wifVersion]), privKey, Buffer.from([0x01])]);
     const wif = bs58check_1.default.encode(wifPayload);
+    // Zero raw key material after WIF encoding
+    privKey.fill(0);
+    wifPayload.fill(0);
     return keypairFromWIF(wif, network);
 }
 //# sourceMappingURL=verus-sign.js.map

@@ -71,13 +71,30 @@ export function generateCanary(): CanaryConfig {
 }
 
 /**
+ * Strip zero-width and invisible Unicode characters that could be used to evade detection.
+ */
+function stripInvisible(s: string): string {
+  // Remove zero-width joiners, non-joiners, spaces, soft hyphens, variation selectors, and other invisible chars
+  return s.replace(/[\u200B-\u200F\u2028-\u202F\u2060-\u206F\uFE00-\uFE0F\uFEFF\u00AD]/g, '');
+}
+
+/**
  * Check if a text contains a canary token.
  * Used for local pre-screening before sending to VAP.
- * 
+ * Applies Unicode normalization and zero-width character stripping to resist evasion.
+ * Note: This is a first-pass check; SafeChat server-side scanning is the primary defense.
+ *
  * @returns true if the canary was leaked (BAD — don't send this message)
  */
 export function checkForCanaryLeak(text: string, canaryToken: string): boolean {
-  return text.includes(canaryToken);
+  // Direct match first (fast path)
+  if (text.includes(canaryToken)) return true;
+  // Normalized match (strip invisible chars, NFKC normalize, case-insensitive)
+  const normalized = stripInvisible(text).normalize('NFKC');
+  const normalizedToken = stripInvisible(canaryToken).normalize('NFKC');
+  if (normalized.includes(normalizedToken)) return true;
+  // Case-insensitive fallback (base64url tokens use mixed-case letters)
+  return normalized.toLowerCase().includes(normalizedToken.toLowerCase());
 }
 
 /**

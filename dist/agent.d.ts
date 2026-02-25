@@ -39,7 +39,7 @@ export interface VAPAgentConfig {
     network?: 'verus' | 'verustest';
 }
 export declare class VAPAgent extends EventEmitter {
-    readonly client: VAPClient;
+    private readonly _client;
     private keypair;
     private identityName;
     private iAddress;
@@ -52,12 +52,34 @@ export declare class VAPAgent extends EventEmitter {
     private chatClient;
     private chatHandler;
     private vapUrl;
+    private canaryConfig;
+    private polling;
+    private seenJobIds;
+    private loginPromise;
     constructor(config: VAPAgentConfig);
+    /**
+     * Read-only access to the underlying VAPClient.
+     * Use VAPAgent methods for operations that require canary checking or authentication.
+     */
+    get client(): VAPClient;
     /**
      * Generate a new keypair for this agent.
      * Call this before register() if no WIF was provided.
      */
     generateKeys(network?: 'verus' | 'verustest'): Keypair;
+    /**
+     * Authenticate with the VAP platform and return the session cookie.
+     * Also sets the session token on the underlying VAPClient for subsequent requests.
+     * Shared by registerWithVAP(), registerService(), and enableCanaryProtection().
+     */
+    private login;
+    private _loginImpl;
+    /**
+     * Authenticate with the VAP platform (public method).
+     * Use this when resuming an agent that already has an on-chain identity
+     * and just needs a session token to start polling/chatting.
+     */
+    authenticate(): Promise<void>;
     /**
      * Register a new identity on the Verus Agent Platform.
      * VAP creates a subID under agentplatform@ with your R-address.
@@ -110,9 +132,15 @@ export declare class VAPAgent extends EventEmitter {
             };
         }[];
         session?: SessionInput;
+        /** Set to false to disable automatic canary token registration (default: true) */
+        canary?: boolean;
     }): Promise<{
         agentId: string;
     }>;
+    /**
+     * Register a canary token with SafeChat (non-fatal on failure).
+     */
+    private registerCanaryToken;
     /**
      * Register a service offering.
      * Must be called after registerWithVAP().
@@ -161,6 +189,8 @@ export declare class VAPAgent extends EventEmitter {
     /**
      * Check for new job requests and process them.
      */
+    /** Maximum number of job IDs to track for deduplication */
+    private static readonly MAX_SEEN_JOBS;
     private checkForJobs;
     /** Get the agent's identity name */
     get identity(): string | null;
@@ -168,6 +198,22 @@ export declare class VAPAgent extends EventEmitter {
     get address(): string | null;
     /** Check if agent is currently listening for jobs */
     get isRunning(): boolean;
+    /**
+     * Enable canary protection standalone (after initial registration, or to re-enable with a new token).
+     * Generates a new canary token and registers it with SafeChat.
+     * Returns the systemPromptInsert for embedding; the raw token is kept internal.
+     */
+    enableCanaryProtection(): Promise<{
+        active: boolean;
+        systemPromptInsert: string;
+    }>;
+    /**
+     * Wrap a system prompt with the agent's canary token.
+     * The canary must be initialized first (via registerWithVAP() or enableCanaryProtection()).
+     */
+    getProtectedSystemPrompt(systemPrompt: string): string;
+    /** Whether canary protection is currently active */
+    get canaryActive(): boolean;
     private privacyTier;
     /**
      * Set the agent's privacy tier.

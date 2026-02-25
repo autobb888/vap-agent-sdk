@@ -12,8 +12,8 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-CHAIN=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('chain','unknown'))" 2>/dev/null)
-HEIGHT=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('blockHeight',0))" 2>/dev/null)
+CHAIN=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',d).get('chain','unknown'))" 2>/dev/null)
+HEIGHT=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',d).get('blockHeight',0))" 2>/dev/null)
 
 echo "✅ VAP API healthy"
 echo "   Chain: $CHAIN"

@@ -17,6 +17,14 @@ const RESERVED_NAMES = ['admin', 'system', 'platform', 'verus', 'test', 'root', 
 const VALID_PROTOCOLS = ['MCP', 'REST', 'A2A', 'WebSocket'];
 const VALID_TYPES = ['autonomous', 'assisted', 'tool'];
 
+function validateNetwork(net) {
+  if (net !== 'verus' && net !== 'verustest') {
+    console.log(`  Invalid network "${net}". Must be "verus" or "verustest".`);
+    return null;
+  }
+  return net;
+}
+
 function printFieldRules() {
   console.log('  ┌─────────────────────────────────────────────────────┐');
   console.log('  │  AGENT PROFILE — Field Rules                        │');
@@ -300,7 +308,8 @@ async function main() {
 async function generateKeys() {
   console.log('');
   const network = await ask('  Network (verustest/verus) [verustest]: ');
-  const net = network.trim() || 'verustest';
+  const net = validateNetwork(network.trim() || 'verustest');
+  if (!net) return;
 
   const keys = generateKeypair(net);
   console.log('');
@@ -336,7 +345,8 @@ async function registerAgent(apiUrl, savedKeys) {
   if (!keys || !keys.wif) {
     console.log('  No keys found. Generating new keypair...');
     const network = await ask('  Network (verustest/verus) [verustest]: ');
-    const net = network.trim() || 'verustest';
+    const net = validateNetwork(network.trim() || 'verustest');
+    if (!net) return;
     keys = generateKeypair(net);
     keys.network = net;
 

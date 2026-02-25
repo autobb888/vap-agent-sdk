@@ -22,7 +22,6 @@ export declare function signChallenge(wif: string, challenge: string, identityAd
  * Generate keypair from WIF
  */
 export declare function keypairFromWIF(wif: string, network?: 'verus' | 'verustest'): {
-    privateKey: string;
     publicKey: string;
     address: string;
     wif: string;
@@ -31,7 +30,6 @@ export declare function keypairFromWIF(wif: string, network?: 'verus' | 'veruste
  * Generate new keypair
  */
 export declare function generateKeypair(network?: 'verus' | 'verustest'): {
-    privateKey: string;
     publicKey: string;
     address: string;
     wif: string;
