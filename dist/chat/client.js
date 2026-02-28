@@ -241,7 +241,7 @@ class ChatClient {
      */
     markRead(jobId) {
         if (this.socket?.connected) {
-            this.socket.emit('mark_read', { jobId });
+            this.socket.emit('read', { jobId });
         }
     }
     /**

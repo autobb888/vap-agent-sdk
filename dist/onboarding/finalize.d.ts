@@ -16,7 +16,7 @@ export interface FinalizeState {
 }
 export interface AgentProfileInput {
     name: string;
-    type: 'autonomous' | 'assisted' | 'tool';
+    type: 'autonomous' | 'assisted' | 'hybrid' | 'tool';
     description: string;
     category?: string;
     owner?: string;

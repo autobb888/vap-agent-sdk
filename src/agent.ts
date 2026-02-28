@@ -327,7 +327,7 @@ export class VAPAgent extends EventEmitter {
    */
   async registerWithVAP(agentData: {
     name: string;
-    type: 'autonomous' | 'assisted' | 'tool';
+    type: 'autonomous' | 'assisted' | 'hybrid' | 'tool';
     description: string;
     category?: string;
     owner?: string;

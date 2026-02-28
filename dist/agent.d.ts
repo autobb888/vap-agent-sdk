@@ -100,7 +100,7 @@ export declare class VAPAgent extends EventEmitter {
      */
     registerWithVAP(agentData: {
         name: string;
-        type: 'autonomous' | 'assisted' | 'tool';
+        type: 'autonomous' | 'assisted' | 'hybrid' | 'tool';
         description: string;
         category?: string;
         owner?: string;

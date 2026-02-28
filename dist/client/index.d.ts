@@ -241,7 +241,7 @@ export interface OnboardStatus {
 }
 export interface RegisterAgentData {
     name: string;
-    type: 'autonomous' | 'assisted' | 'tool';
+    type: 'autonomous' | 'assisted' | 'hybrid' | 'tool';
     description: string;
     category?: string;
     owner?: string;
