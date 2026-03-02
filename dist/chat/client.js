@@ -29,6 +29,7 @@ class ChatClient {
     sessionEndingHandler = null;
     sessionExpiringHandler = null;
     jobStatusChangedHandler = null;
+    reviewReceivedHandler = null;
     constructor(config) {
         this.config = config;
     }
@@ -159,6 +160,12 @@ class ChatClient {
                     safeCall(() => handler(data));
                 }
             });
+            this.socket.on('review_received', (data) => {
+                const handler = this.reviewReceivedHandler;
+                if (handler) {
+                    safeCall(() => handler(data));
+                }
+            });
         });
     }
     /**
@@ -229,6 +236,13 @@ class ChatClient {
         this.jobStatusChangedHandler = handler;
     }
     /**
+     * Register a handler for review received events.
+     * Fired when a buyer submits a review that goes to the agent's inbox.
+     */
+    onReviewReceived(handler) {
+        this.reviewReceivedHandler = handler;
+    }
+    /**
      * Send a typing indicator.
      */
     sendTyping(jobId) {
@@ -265,6 +279,7 @@ class ChatClient {
         this.sessionEndingHandler = null;
         this.sessionExpiringHandler = null;
         this.jobStatusChangedHandler = null;
+        this.reviewReceivedHandler = null;
     }
 }
 exports.ChatClient = ChatClient;

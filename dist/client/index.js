@@ -314,6 +314,26 @@ class VAPClient {
         return res.data;
     }
     // ------------------------------------------
+    // Inbox endpoints
+    // ------------------------------------------
+    /** Get pending inbox items */
+    async getInbox(status = 'pending', limit = 20) {
+        const query = new URLSearchParams({ status, limit: String(limit) });
+        return this.request('GET', `/v1/me/inbox?${query}`);
+    }
+    /** Get a specific inbox item with full details and update command */
+    async getInboxItem(id) {
+        return this.request('GET', `/v1/me/inbox/${encodeURIComponent(id)}`);
+    }
+    /** Accept an inbox item (mark as processed, optionally record txid) */
+    async acceptInboxItem(id, txid) {
+        return this.request('POST', `/v1/me/inbox/${encodeURIComponent(id)}/accept`, { txid });
+    }
+    /** Get raw identity data from chain (for offline tx building) */
+    async getIdentityRaw() {
+        return this.request('GET', '/v1/me/identity/raw');
+    }
+    // ------------------------------------------
     // Agent Profile endpoints
     // ------------------------------------------
     /** Update agent profile (privacy tier, etc.) */
@@ -383,6 +403,434 @@ class VAPClient {
         const qs = query.toString();
         const res = await this.request('GET', `/v1/pricing/recommend${qs ? `?${qs}` : ''}`);
         return res.data;
+    }
+    /** Get pricing models list */
+    async getPricingModels() {
+        const res = await this.request('GET', '/v1/pricing/models');
+        return res.data;
+    }
+    // ------------------------------------------
+    // Job creation endpoints
+    // ------------------------------------------
+    /** Get the message format for creating a job request (for signing) */
+    async getJobRequestMessage(params) {
+        const query = new URLSearchParams();
+        query.set('sellerVerusId', params.sellerVerusId);
+        query.set('description', params.description);
+        query.set('amount', String(params.amount));
+        if (params.currency)
+            query.set('currency', params.currency);
+        if (params.deadline)
+            query.set('deadline', params.deadline);
+        if (params.timestamp != null)
+            query.set('timestamp', String(params.timestamp));
+        if (params.safechatEnabled === false)
+            query.set('safechatEnabled', 'false');
+        const res = await this.request('GET', `/v1/jobs/message/request?${query}`);
+        return res.data;
+    }
+    /** Create a new job request (buyer → seller) */
+    async createJob(data) {
+        const res = await this.request('POST', '/v1/jobs', data);
+        return res.data;
+    }
+    // ------------------------------------------
+    // Service management endpoints
+    // ------------------------------------------
+    /** Browse all services (public) */
+    async getServices(params) {
+        const query = new URLSearchParams();
+        if (params?.agentId)
+            query.set('agentId', params.agentId);
+        if (params?.verusId)
+            query.set('verusId', params.verusId);
+        if (params?.category)
+            query.set('category', params.category);
+        if (params?.status)
+            query.set('status', params.status);
+        if (params?.minPrice != null)
+            query.set('minPrice', String(params.minPrice));
+        if (params?.maxPrice != null)
+            query.set('maxPrice', String(params.maxPrice));
+        if (params?.q)
+            query.set('q', params.q);
+        if (params?.limit != null)
+            query.set('limit', String(params.limit));
+        if (params?.offset != null)
+            query.set('offset', String(params.offset));
+        if (params?.sort)
+            query.set('sort', params.sort);
+        if (params?.order)
+            query.set('order', params.order);
+        const qs = query.toString();
+        return this.request('GET', `/v1/services${qs ? `?${qs}` : ''}`);
+    }
+    /** Get service categories (public) */
+    async getServiceCategories() {
+        const res = await this.request('GET', '/v1/services/categories');
+        return res.data;
+    }
+    /** Get a specific service (public) */
+    async getService(serviceId) {
+        const res = await this.request('GET', `/v1/services/${encodeURIComponent(serviceId)}`);
+        return res.data;
+    }
+    /** Get an agent's services (public) */
+    async getAgentServices(verusId) {
+        return this.request('GET', `/v1/services/agent/${encodeURIComponent(verusId)}`);
+    }
+    /** List my services (authenticated) */
+    async getMyServices() {
+        return this.request('GET', '/v1/me/services');
+    }
+    /** Update a service (authenticated, owner only) */
+    async updateService(serviceId, data) {
+        const res = await this.request('PUT', `/v1/me/services/${encodeURIComponent(serviceId)}`, data);
+        return res.data;
+    }
+    /** Delete a service (authenticated, owner only) */
+    async deleteService(serviceId) {
+        const res = await this.request('DELETE', `/v1/me/services/${encodeURIComponent(serviceId)}`);
+        return res.data;
+    }
+    // ------------------------------------------
+    // File sharing endpoints
+    // ------------------------------------------
+    /** Upload a file to a job (multipart/form-data) */
+    async uploadFile(jobId, file, filename, mimeType) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), this.timeout);
+        try {
+            const formData = new FormData();
+            const blob = file instanceof Blob ? file : new Blob([file], { type: mimeType || 'application/octet-stream' });
+            formData.append('file', blob, filename);
+            const headers = {};
+            if (this.sessionToken) {
+                headers['Cookie'] = `verus_session=${this.sessionToken}`;
+            }
+            const response = await fetch(`${this.baseUrl}/v1/jobs/${encodeURIComponent(jobId)}/files`, {
+                method: 'POST',
+                headers,
+                body: formData,
+                signal: controller.signal,
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                if (response.status === 401 || response.status === 403)
+                    this.sessionToken = null;
+                const error = (data?.error ?? {});
+                throw new VAPError(error.message || `HTTP ${response.status}`, error.code || 'HTTP_ERROR', response.status);
+            }
+            return data.data;
+        }
+        finally {
+            clearTimeout(timer);
+        }
+    }
+    /** List files for a job */
+    async getJobFiles(jobId) {
+        return this.request('GET', `/v1/jobs/${encodeURIComponent(jobId)}/files`);
+    }
+    /** Download a file (returns raw response for streaming) */
+    async downloadFile(jobId, fileId) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), this.timeout);
+        try {
+            const headers = {};
+            if (this.sessionToken) {
+                headers['Cookie'] = `verus_session=${this.sessionToken}`;
+            }
+            const response = await fetch(`${this.baseUrl}/v1/jobs/${encodeURIComponent(jobId)}/files/${encodeURIComponent(fileId)}`, {
+                method: 'GET',
+                headers,
+                signal: controller.signal,
+            });
+            if (!response.ok) {
+                if (response.status === 401 || response.status === 403)
+                    this.sessionToken = null;
+                let errData = {};
+                try {
+                    errData = await response.json();
+                }
+                catch { /* binary response */ }
+                const error = (errData?.error ?? {});
+                throw new VAPError(error.message || `HTTP ${response.status}`, error.code || 'HTTP_ERROR', response.status);
+            }
+            const disposition = response.headers.get('content-disposition') || '';
+            const filenameMatch = disposition.match(/filename="([^"]+)"/);
+            return {
+                data: await response.arrayBuffer(),
+                filename: filenameMatch?.[1] || 'download',
+                mimeType: response.headers.get('content-type') || 'application/octet-stream',
+                checksum: response.headers.get('x-checksum-sha256') || '',
+            };
+        }
+        finally {
+            clearTimeout(timer);
+        }
+    }
+    /** Delete a file (uploader only) */
+    async deleteFile(jobId, fileId) {
+        const res = await this.request('DELETE', `/v1/jobs/${encodeURIComponent(jobId)}/files/${encodeURIComponent(fileId)}`);
+        return res.data;
+    }
+    // ------------------------------------------
+    // Agent discovery endpoints
+    // ------------------------------------------
+    /** List agents (public) */
+    async getAgents(params) {
+        const query = new URLSearchParams();
+        if (params?.status)
+            query.set('status', params.status);
+        if (params?.type)
+            query.set('type', params.type);
+        if (params?.capability)
+            query.set('capability', params.capability);
+        if (params?.owner)
+            query.set('owner', params.owner);
+        if (params?.limit != null)
+            query.set('limit', String(params.limit));
+        if (params?.offset != null)
+            query.set('offset', String(params.offset));
+        if (params?.sort)
+            query.set('sort', params.sort);
+        if (params?.order)
+            query.set('order', params.order);
+        const qs = query.toString();
+        return this.request('GET', `/v1/agents${qs ? `?${qs}` : ''}`);
+    }
+    /** Get agent details (public) */
+    async getAgent(verusId) {
+        const res = await this.request('GET', `/v1/agents/${encodeURIComponent(verusId)}`);
+        return res.data;
+    }
+    /** Get agent capabilities (public) */
+    async getAgentCapabilities(verusId) {
+        const res = await this.request('GET', `/v1/agents/${encodeURIComponent(verusId)}/capabilities`);
+        return res.data;
+    }
+    /** Search agents by keyword (public) */
+    async searchAgents(params) {
+        const query = new URLSearchParams();
+        query.set('q', params.q);
+        if (params.type)
+            query.set('type', params.type);
+        if (params.status)
+            query.set('status', params.status);
+        if (params.verified != null)
+            query.set('verified', String(params.verified));
+        if (params.limit != null)
+            query.set('limit', String(params.limit));
+        if (params.offset != null)
+            query.set('offset', String(params.offset));
+        return this.request('GET', `/v1/search?${query}`);
+    }
+    /** Deactivate an agent (signed request) */
+    async deactivateAgent(agentId, verusId, signature, timestamp) {
+        const res = await this.request('POST', `/v1/agents/${encodeURIComponent(agentId)}/deactivate`, { verusId, signature, timestamp });
+        return res.data;
+    }
+    // ------------------------------------------
+    // Reviews & Reputation endpoints
+    // ------------------------------------------
+    /** Get reviews for an agent (public) */
+    async getAgentReviews(verusId, params) {
+        const query = new URLSearchParams();
+        if (params?.limit != null)
+            query.set('limit', String(params.limit));
+        if (params?.offset != null)
+            query.set('offset', String(params.offset));
+        if (params?.verified != null)
+            query.set('verified', String(params.verified));
+        const qs = query.toString();
+        return this.request('GET', `/v1/reviews/agent/${encodeURIComponent(verusId)}${qs ? `?${qs}` : ''}`);
+    }
+    /** Get reviews left by a buyer (public) */
+    async getBuyerReviews(verusId, params) {
+        const query = new URLSearchParams();
+        if (params?.limit != null)
+            query.set('limit', String(params.limit));
+        if (params?.offset != null)
+            query.set('offset', String(params.offset));
+        const qs = query.toString();
+        return this.request('GET', `/v1/reviews/buyer/${encodeURIComponent(verusId)}${qs ? `?${qs}` : ''}`);
+    }
+    /** Get review for a specific job (public) */
+    async getJobReview(jobHash) {
+        const res = await this.request('GET', `/v1/reviews/job/${encodeURIComponent(jobHash)}`);
+        return res.data;
+    }
+    /** Get agent reputation score (public) */
+    async getReputation(verusId, quick = false) {
+        const query = quick ? '?quick=true' : '';
+        const res = await this.request('GET', `/v1/reputation/${encodeURIComponent(verusId)}${query}`);
+        return res.data;
+    }
+    /** Get top agents by reputation (public) */
+    async getTopAgents(limit = 10) {
+        const res = await this.request('GET', `/v1/reputation/top?limit=${limit}`);
+        return res.data;
+    }
+    // ------------------------------------------
+    // Data privacy endpoints
+    // ------------------------------------------
+    /** Get an agent's data policy (public) */
+    async getAgentDataPolicy(verusId) {
+        const res = await this.request('GET', `/v1/agents/${encodeURIComponent(verusId)}/data-policy`);
+        return res.data;
+    }
+    /** Set my data policy (authenticated) */
+    async setDataPolicy(policy) {
+        const res = await this.request('PUT', '/v1/me/data-policy', policy);
+        return res.data;
+    }
+    /** Get job data terms and attestation status */
+    async getJobDataTerms(jobId) {
+        const res = await this.request('GET', `/v1/jobs/${encodeURIComponent(jobId)}/data-terms`);
+        return res.data;
+    }
+    // ------------------------------------------
+    // Deletion attestation endpoints
+    // ------------------------------------------
+    /** Get the message to sign for a deletion attestation */
+    async getDeletionAttestationMessage(jobId, timestamp) {
+        const query = timestamp != null ? `?timestamp=${timestamp}` : '';
+        const res = await this.request('GET', `/v1/jobs/${encodeURIComponent(jobId)}/deletion-attestation/message${query}`);
+        return res.data;
+    }
+    /** Submit a signed deletion attestation for a job */
+    async submitDeletionAttestation(jobId, signature, timestamp) {
+        const res = await this.request('POST', `/v1/jobs/${encodeURIComponent(jobId)}/deletion-attestation`, { signature, timestamp });
+        return res.data;
+    }
+    /** Get deletion attestation for a job */
+    async getDeletionAttestation(jobId) {
+        const res = await this.request('GET', `/v1/jobs/${encodeURIComponent(jobId)}/deletion-attestation`);
+        return res.data;
+    }
+    // ------------------------------------------
+    // Content moderation endpoints
+    // ------------------------------------------
+    /** Get held messages for a job */
+    async getHeldMessages(jobId) {
+        const res = await this.request('GET', `/v1/jobs/${encodeURIComponent(jobId)}/held-messages`);
+        return res.data;
+    }
+    /** Appeal a held message */
+    async appealHeldMessage(jobId, messageId, reason) {
+        const res = await this.request('POST', `/v1/jobs/${encodeURIComponent(jobId)}/held-messages/${encodeURIComponent(messageId)}/appeal`, { reason });
+        return res.data;
+    }
+    /** Release a held message (buyer only) */
+    async releaseHeldMessage(jobId, messageId) {
+        const res = await this.request('POST', `/v1/jobs/${encodeURIComponent(jobId)}/held-messages/${encodeURIComponent(messageId)}/release`, {});
+        return res.data;
+    }
+    /** Reject a held message (buyer only) */
+    async rejectHeldMessage(jobId, messageId) {
+        const res = await this.request('POST', `/v1/jobs/${encodeURIComponent(jobId)}/held-messages/${encodeURIComponent(messageId)}/reject`, {});
+        return res.data;
+    }
+    /** Get hold queue statistics */
+    async getHoldQueueStats() {
+        const res = await this.request('GET', '/v1/hold-queue/stats');
+        return res.data;
+    }
+    // ------------------------------------------
+    // Additional safety endpoints
+    // ------------------------------------------
+    /** List registered canary tokens */
+    async getCanaries() {
+        const res = await this.request('GET', '/v1/me/canary');
+        return res.canaries;
+    }
+    /** Delete a canary token */
+    async deleteCanary(canaryId) {
+        return this.request('DELETE', `/v1/me/canary/${encodeURIComponent(canaryId)}`);
+    }
+    /** Get communication policy */
+    async getCommunicationPolicy() {
+        return this.request('GET', '/v1/me/communication-policy');
+    }
+    // ------------------------------------------
+    // Additional inbox endpoints
+    // ------------------------------------------
+    /** Reject an inbox item */
+    async rejectInboxItem(id) {
+        return this.request('POST', `/v1/me/inbox/${encodeURIComponent(id)}/reject`, {});
+    }
+    /** Get pending inbox count */
+    async getInboxCount() {
+        const res = await this.request('GET', '/v1/me/inbox/count');
+        return res.data;
+    }
+    // ------------------------------------------
+    // Alerts endpoints
+    // ------------------------------------------
+    /** Get my alerts */
+    async getAlerts() {
+        const res = await this.request('GET', '/v1/me/alerts');
+        return res.data;
+    }
+    /** Dismiss an alert */
+    async dismissAlert(alertId) {
+        const res = await this.request('POST', `/v1/me/alerts/${encodeURIComponent(alertId)}/dismiss`, {});
+        return res.data;
+    }
+    /** Report an alert */
+    async reportAlert(alertId) {
+        const res = await this.request('POST', `/v1/me/alerts/${encodeURIComponent(alertId)}/report`, {});
+        return res.data;
+    }
+    // ------------------------------------------
+    // Auth session endpoints
+    // ------------------------------------------
+    /** Login with signed challenge (sets session token from response cookie) */
+    async login(challengeId, verusId, signature) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), this.timeout);
+        try {
+            const response = await fetch(`${this.baseUrl}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({ challengeId, verusId, signature }),
+                signal: controller.signal,
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                const error = (data?.error ?? {});
+                throw new VAPError(error.message || `HTTP ${response.status}`, error.code || 'HTTP_ERROR', response.status);
+            }
+            // Extract session cookie from Set-Cookie header
+            const setCookie = response.headers.get('set-cookie') || '';
+            const sessionMatch = setCookie.match(/verus_session=([^;]+)/);
+            if (sessionMatch) {
+                this.setSessionToken(sessionMatch[1]);
+            }
+            return data.data;
+        }
+        finally {
+            clearTimeout(timer);
+        }
+    }
+    /** Get current session info */
+    async getSession() {
+        const res = await this.request('GET', '/auth/session');
+        return res.data;
+    }
+    /** Logout (clears session) */
+    async logout() {
+        await this.request('POST', '/auth/logout', {});
+        this.sessionToken = null;
+    }
+    /** Get capabilities list (public) */
+    async getCapabilities() {
+        const res = await this.request('GET', '/v1/capabilities');
+        return res.data;
+    }
+    /** Health check */
+    async health() {
+        return this.request('GET', '/v1/health');
     }
 }
 exports.VAPClient = VAPClient;

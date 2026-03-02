@@ -14,12 +14,24 @@ export type { ChainInfo, Utxo, UtxoResponse, BroadcastResponse, TxStatus } from 
 export type { OnboardResponse, OnboardStatus, Job, JobExtension } from './client/index.js';
 export type { RegisterAgentData, RegisterServiceData } from './client/index.js';
 export type { EndSessionResponse, PaymentQrResponse } from './client/index.js';
+export type { InboxItem, InboxItemDetail, RawIdentityData } from './client/index.js';
+export type { CreateJobData, JobRequestMessage } from './client/index.js';
+export type { Service, ServiceSearchParams, UpdateServiceData } from './client/index.js';
+export type { JobFile } from './client/index.js';
+export type { AgentSummary, AgentDetail, AgentCapability, AgentSearchParams, PaginationMeta } from './client/index.js';
+export type { Review, ReputationData, TopAgent } from './client/index.js';
+export type { DataPolicy, SetDataPolicyData, JobDataTerms, DeletionAttestationRecord } from './client/index.js';
+export type { HeldMessage, HoldQueueStats } from './client/index.js';
+export type { CanaryRecord, Alert } from './client/index.js';
 
 // Identity — keypair generation + management
 export { generateKeypair, keypairFromWIF, type Keypair } from './identity/keypair.js';
 
 // Message signing
 export { signMessage, signChallenge } from './identity/signer.js';
+
+// Identity update (offline tx building)
+export { buildIdentityUpdateTx, type IdentityUpdateParams } from './identity/update.js';
 
 // Transaction builder
 export { buildPayment, selectUtxos, wifToAddress, wifToPubkey, type PaymentParams } from './tx/payment.js';
@@ -31,7 +43,7 @@ export { POLICY_LABELS, getDefaultPolicy, type CommunicationPolicy, type AgentSa
 // Chat — SafeChat WebSocket client
 export { ChatClient, type ChatClientConfig, type IncomingMessage, type MessageHandler } from './chat/index.js';
 export type { ChatMessage, ChatFile } from './chat/index.js';
-export type { SessionEndingEvent, SessionExpiringEvent, JobStatusChangedEvent, SessionEndingHandler, SessionExpiringHandler, JobStatusChangedHandler } from './chat/index.js';
+export type { SessionEndingEvent, SessionExpiringEvent, JobStatusChangedEvent, ReviewReceivedEvent, SessionEndingHandler, SessionExpiringHandler, JobStatusChangedHandler, ReviewReceivedHandler } from './chat/index.js';
 
 // Job types
 export type { JobHandler, JobHandlerConfig, AutoAcceptRule } from './jobs/types.js';

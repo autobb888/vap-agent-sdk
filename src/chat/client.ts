@@ -41,10 +41,18 @@ export interface JobStatusChangedEvent {
   reason?: string;
 }
 
+export interface ReviewReceivedEvent {
+  inboxId: string;
+  jobHash: string;
+  rating: number | null;
+  buyerVerusId: string;
+}
+
 export type MessageHandler = (message: IncomingMessage) => void | Promise<void>;
 export type SessionEndingHandler = (event: SessionEndingEvent) => void | Promise<void>;
 export type SessionExpiringHandler = (event: SessionExpiringEvent) => void | Promise<void>;
 export type JobStatusChangedHandler = (event: JobStatusChangedEvent) => void | Promise<void>;
+export type ReviewReceivedHandler = (event: ReviewReceivedEvent) => void | Promise<void>;
 
 /** Safely invoke any async/sync callback, catching both sync throws and async rejections */
 function safeCall(fn: () => void | Promise<void>): void {
@@ -70,6 +78,7 @@ export class ChatClient {
   private sessionEndingHandler: SessionEndingHandler | null = null;
   private sessionExpiringHandler: SessionExpiringHandler | null = null;
   private jobStatusChangedHandler: JobStatusChangedHandler | null = null;
+  private reviewReceivedHandler: ReviewReceivedHandler | null = null;
 
   constructor(config: ChatClientConfig) {
     this.config = config;
@@ -216,6 +225,13 @@ export class ChatClient {
           safeCall(() => handler(data));
         }
       });
+
+      this.socket.on('review_received', (data: ReviewReceivedEvent) => {
+        const handler = this.reviewReceivedHandler;
+        if (handler) {
+          safeCall(() => handler(data));
+        }
+      });
     });
   }
 
@@ -295,6 +311,14 @@ export class ChatClient {
   }
 
   /**
+   * Register a handler for review received events.
+   * Fired when a buyer submits a review that goes to the agent's inbox.
+   */
+  onReviewReceived(handler: ReviewReceivedHandler): void {
+    this.reviewReceivedHandler = handler;
+  }
+
+  /**
    * Send a typing indicator.
    */
   sendTyping(jobId: string): void {
@@ -334,5 +358,6 @@ export class ChatClient {
     this.sessionEndingHandler = null;
     this.sessionExpiringHandler = null;
     this.jobStatusChangedHandler = null;
+    this.reviewReceivedHandler = null;
   }
 }

@@ -33,10 +33,17 @@ export interface JobStatusChangedEvent {
     status: string;
     reason?: string;
 }
+export interface ReviewReceivedEvent {
+    inboxId: string;
+    jobHash: string;
+    rating: number | null;
+    buyerVerusId: string;
+}
 export type MessageHandler = (message: IncomingMessage) => void | Promise<void>;
 export type SessionEndingHandler = (event: SessionEndingEvent) => void | Promise<void>;
 export type SessionExpiringHandler = (event: SessionExpiringEvent) => void | Promise<void>;
 export type JobStatusChangedHandler = (event: JobStatusChangedEvent) => void | Promise<void>;
+export type ReviewReceivedHandler = (event: ReviewReceivedEvent) => void | Promise<void>;
 export declare class ChatClient {
     private socket;
     private config;
@@ -46,6 +53,7 @@ export declare class ChatClient {
     private sessionEndingHandler;
     private sessionExpiringHandler;
     private jobStatusChangedHandler;
+    private reviewReceivedHandler;
     constructor(config: ChatClientConfig);
     /**
      * Connect to the chat server.
@@ -87,6 +95,11 @@ export declare class ChatClient {
      * Fired on job state transitions (deliver, complete, etc.).
      */
     onJobStatusChanged(handler: JobStatusChangedHandler): void;
+    /**
+     * Register a handler for review received events.
+     * Fired when a buyer submits a review that goes to the agent's inbox.
+     */
+    onReviewReceived(handler: ReviewReceivedHandler): void;
     /**
      * Send a typing indicator.
      */

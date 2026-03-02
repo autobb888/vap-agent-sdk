@@ -183,6 +183,16 @@ export declare class VAPAgent extends EventEmitter {
      */
     sendChatMessage(jobId: string, content: string): void;
     /**
+     * Auto-deliver a job (used as default when session ends and no custom handler is set).
+     * Signs a delivery message and submits it to the platform.
+     */
+    private autoDeliver;
+    /**
+     * Accept a review from the inbox and update identity on-chain.
+     * Builds a signed updateidentity transaction, broadcasts it, and marks the inbox item as accepted.
+     */
+    acceptReview(inboxId: string): Promise<void>;
+    /**
      * Join a specific job's chat room.
      */
     joinJobChat(jobId: string): void;

@@ -18,7 +18,7 @@ import { EventEmitter } from 'node:events';
 import { VAPClient } from './client/index.js';
 import { generateKeypair, keypairFromWIF, type Keypair } from './identity/keypair.js';
 import { signChallenge, signMessage } from './identity/signer.js';
-import { ChatClient, type IncomingMessage, type SessionEndingEvent, type SessionExpiringEvent, type JobStatusChangedEvent } from './chat/client.js';
+import { ChatClient, type IncomingMessage, type SessionEndingEvent, type SessionExpiringEvent, type JobStatusChangedEvent, type ReviewReceivedEvent } from './chat/client.js';
 import type { JobHandler, JobHandlerConfig } from './jobs/types.js';
 import type { Job } from './client/index.js';
 import type { SessionInput } from './onboarding/finalize.js';
@@ -30,6 +30,8 @@ import type { JobCategory } from './pricing/tables.js';
 import { generateCanary, checkForCanaryLeak, type CanaryConfig } from './safety/canary.js';
 import { randomUUID } from 'node:crypto';
 import { canonicalize } from 'json-canonicalize';
+import { buildIdentityUpdateTx } from './identity/update.js';
+import { VDXF_KEYS, encodeVdxfValue } from './onboarding/vdxf.js';
 
 /** Default request timeout for raw fetch calls (ms) */
 const FETCH_TIMEOUT = 30_000;
@@ -646,6 +648,14 @@ export class VAPAgent extends EventEmitter {
         } catch (err) {
           this.emit('error', err instanceof Error ? err : new Error(String(err)));
         }
+      } else {
+        // Default: auto-deliver when no custom handler is provided
+        console.log(`[VAP Agent] Session ending for job ${event.jobId} — auto-delivering...`);
+        try {
+          await this.autoDeliver(event.jobId);
+        } catch (err) {
+          this.emit('error', err instanceof Error ? err : new Error(String(err)));
+        }
       }
     });
 
@@ -668,6 +678,17 @@ export class VAPAgent extends EventEmitter {
         } else if (event.status === 'cancelled' && this.handler.onJobCancelled) {
           await this.handler.onJobCancelled(job, event.reason);
         }
+      } catch (err) {
+        this.emit('error', err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+
+    // Handle review notifications — auto-accept and update identity on-chain
+    this.chatClient.onReviewReceived(async (event: ReviewReceivedEvent) => {
+      this.emit('review:received', event);
+      console.log(`[VAP Agent] Review received for job ${event.jobHash} (rating: ${event.rating}) — processing...`);
+      try {
+        await this.acceptReview(event.inboxId);
       } catch (err) {
         this.emit('error', err instanceof Error ? err : new Error(String(err)));
       }
@@ -713,6 +734,134 @@ export class VAPAgent extends EventEmitter {
       );
     }
     this.chatClient.sendMessage(jobId, content);
+  }
+
+  /**
+   * Auto-deliver a job (used as default when session ends and no custom handler is set).
+   * Signs a delivery message and submits it to the platform.
+   */
+  private async autoDeliver(jobId: string): Promise<void> {
+    if (!this.wif || !this.iAddress) {
+      console.error(`[VAP Agent] Cannot auto-deliver job ${jobId}: WIF key and i-address required`);
+      return;
+    }
+
+    try {
+      const job = await this._client.getJob(jobId);
+
+      // Only deliver if job is in a deliverable state
+      if (job.status !== 'accepted' && job.status !== 'in_progress') {
+        console.log(`[VAP Agent] Job ${jobId} is in status '${job.status}', skipping auto-deliver`);
+        return;
+      }
+
+      const timestamp = Math.floor(Date.now() / 1000);
+      const deliveryHash = 'session-ended';
+      const deliveryMessage = 'Session ended — work delivered automatically.';
+      const message = `VAP-DELIVER|Job:${job.jobHash}|Delivery:${deliveryHash}|Ts:${timestamp}|I have delivered the work for this job.`;
+      const signature = signChallenge(this.wif, message, this.iAddress, this.networkType);
+
+      await this._client.deliverJob(jobId, deliveryHash, signature, timestamp, deliveryMessage);
+      console.log(`[VAP Agent] ✅ Auto-delivered job ${jobId}`);
+      this.emit('job:delivered', { jobId });
+    } catch (err) {
+      console.error(`[VAP Agent] Auto-deliver failed for job ${jobId}:`, err instanceof Error ? err.message : String(err));
+      throw err;
+    }
+  }
+
+  /**
+   * Accept a review from the inbox and update identity on-chain.
+   * Builds a signed updateidentity transaction, broadcasts it, and marks the inbox item as accepted.
+   */
+  async acceptReview(inboxId: string): Promise<void> {
+    if (!this.wif || !this.iAddress) {
+      console.error(`[VAP Agent] Cannot accept review ${inboxId}: WIF key and i-address required`);
+      return;
+    }
+
+    try {
+      // 1. Fetch the inbox item to get VDXF data
+      const { data: inboxItem } = await this._client.getInboxItem(inboxId);
+      if (inboxItem.status !== 'pending') {
+        console.log(`[VAP Agent] Inbox item ${inboxId} already ${inboxItem.status}, skipping`);
+        return;
+      }
+
+      // 2. Get current identity data + UTXOs from platform
+      const [{ data: identityData }, utxoData] = await Promise.all([
+        this._client.getIdentityRaw(),
+        this._client.getUtxos(),
+      ]);
+
+      if (!identityData.prevOutput) {
+        console.error(`[VAP Agent] Cannot accept review: identity previous output not found`);
+        return;
+      }
+
+      if (!utxoData.utxos || utxoData.utxos.length === 0) {
+        console.error(`[VAP Agent] Cannot accept review: no UTXOs available for fee`);
+        return;
+      }
+
+      // 3. Build VDXF additions from the inbox item's review data
+      const reviewKeys = VDXF_KEYS.review;
+      const vdxfAdditions: Record<string, string[]> = {};
+
+      if (inboxItem.vdxfData) {
+        // Use the pre-computed VDXF data from the inbox item
+        for (const [key, value] of Object.entries(inboxItem.vdxfData)) {
+          if (value != null) {
+            vdxfAdditions[key] = [String(value)];
+          }
+        }
+      } else {
+        // Build VDXF data from inbox item fields
+        if (inboxItem.senderVerusId) {
+          vdxfAdditions[reviewKeys.buyer] = [encodeVdxfValue(inboxItem.senderVerusId)];
+        }
+        if (inboxItem.jobHash) {
+          vdxfAdditions[reviewKeys.jobHash] = [encodeVdxfValue(inboxItem.jobHash)];
+        }
+        if (inboxItem.message) {
+          vdxfAdditions[reviewKeys.message] = [encodeVdxfValue(inboxItem.message)];
+        }
+        if (inboxItem.rating != null) {
+          vdxfAdditions[reviewKeys.rating] = [encodeVdxfValue(inboxItem.rating)];
+        }
+        if (inboxItem.signature) {
+          vdxfAdditions[reviewKeys.signature] = [encodeVdxfValue(inboxItem.signature)];
+        }
+        vdxfAdditions[reviewKeys.timestamp] = [encodeVdxfValue(Math.floor(Date.now() / 1000))];
+      }
+
+      // 4. Build and sign the identity update transaction
+      console.log(`[VAP Agent] Building identity update transaction...`);
+      const signedTxHex = buildIdentityUpdateTx({
+        wif: this.wif,
+        identityData,
+        utxos: utxoData.utxos,
+        vdxfAdditions,
+        network: this.networkType,
+      });
+
+      // 5. Broadcast the signed transaction
+      console.log(`[VAP Agent] Broadcasting identity update transaction...`);
+      const broadcastResult = await this._client.broadcast(signedTxHex);
+      console.log(`[VAP Agent] ✅ Identity updated on-chain: ${broadcastResult.txid}`);
+
+      // 6. Mark inbox item as accepted
+      await this._client.acceptInboxItem(inboxId, broadcastResult.txid);
+      console.log(`[VAP Agent] ✅ Review accepted and identity updated`);
+
+      this.emit('review:accepted', {
+        inboxId,
+        txid: broadcastResult.txid,
+      });
+    } catch (err) {
+      console.error(`[VAP Agent] Failed to accept review ${inboxId}:`, err instanceof Error ? err.message : String(err));
+      throw err;
+    }
   }
 
   /**
