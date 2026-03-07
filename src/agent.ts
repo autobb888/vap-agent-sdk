@@ -17,7 +17,7 @@
 import { EventEmitter } from 'node:events';
 import { VAPClient } from './client/index.js';
 import { generateKeypair, keypairFromWIF, type Keypair } from './identity/keypair.js';
-import { signChallenge, signMessage } from './identity/signer.js';
+import { signMessage } from './identity/signer.js';
 import { ChatClient, type IncomingMessage, type SessionEndingEvent, type SessionExpiringEvent, type JobStatusChangedEvent, type ReviewReceivedEvent } from './chat/client.js';
 import type { JobHandler, JobHandlerConfig } from './jobs/types.js';
 import type { Job } from './client/index.js';
@@ -759,7 +759,7 @@ export class VAPAgent extends EventEmitter {
       const deliveryHash = 'session-ended';
       const deliveryMessage = 'Session ended — work delivered automatically.';
       const message = `VAP-DELIVER|Job:${job.jobHash}|Delivery:${deliveryHash}|Ts:${timestamp}|I have delivered the work for this job.`;
-      const signature = signChallenge(this.wif, message, this.iAddress, this.networkType);
+      const signature = signMessage(this.wif, message, this.networkType);
 
       await this._client.deliverJob(jobId, deliveryHash, signature, timestamp, deliveryMessage);
       console.log(`[VAP Agent] ✅ Auto-delivered job ${jobId}`);
@@ -907,7 +907,7 @@ export class VAPAgent extends EventEmitter {
               try {
                 const timestamp = Math.floor(Date.now() / 1000);
                 const acceptMessage = `VAP-ACCEPT|Job:${job.jobHash}|Buyer:${job.buyerVerusId}|Amt:${job.amount} ${job.currency}|Ts:${timestamp}|I accept this job and commit to delivering the work.`;
-                const signature = signChallenge(this.wif, acceptMessage, this.iAddress, this.networkType);
+                const signature = signMessage(this.wif, acceptMessage, this.networkType);
                 await this._client.acceptJob(job.id, signature, timestamp);
                 this.seenJobIds.add(job.id);
                 this.emit('job:accepted', job);
