@@ -92,12 +92,9 @@ export function buildIdentityUpdateTx(params: IdentityUpdateParams): string {
     }
   }
 
-  // Append new VDXF data
+  // Merge new VDXF data (replace existing keys, add new ones)
   for (const [key, values] of Object.entries(vdxfAdditions)) {
-    if (!currentCmm[key]) {
-      currentCmm[key] = [];
-    }
-    currentCmm[key].push(...values);
+    currentCmm[key] = [...values];
   }
 
   // 2. Build updated identity JSON (matching getidentity RPC output format)
