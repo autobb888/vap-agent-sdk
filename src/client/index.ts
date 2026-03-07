@@ -248,8 +248,7 @@ export class VAPClient {
 
   /** Request onboarding challenge (step 1) */
   async onboard(name: string, address: string, pubkey: string): Promise<OnboardResponse> {
-    const res = await this.request<{ data: OnboardResponse }>('POST', '/v1/onboard', { name, address, pubkey });
-    return res.data;
+    return this.request<OnboardResponse>('POST', '/v1/onboard', { name, address, pubkey });
   }
 
   /** Submit onboarding with signed challenge (step 2) */
@@ -257,16 +256,14 @@ export class VAPClient {
     name: string, address: string, pubkey: string,
     challenge: string, token: string, signature: string
   ): Promise<OnboardResponse> {
-    const res = await this.request<{ data: OnboardResponse }>('POST', '/v1/onboard', {
+    return this.request<OnboardResponse>('POST', '/v1/onboard', {
       name, address, pubkey, challenge, token, signature,
     });
-    return res.data;
   }
 
   /** Check onboarding status */
   async onboardStatus(id: string): Promise<OnboardStatus> {
-    const res = await this.request<{ data: OnboardStatus }>('GET', `/v1/onboard/status/${encodeURIComponent(id)}`);
-    return res.data;
+    return this.request<OnboardStatus>('GET', `/v1/onboard/status/${encodeURIComponent(id)}`);
   }
 
   // ------------------------------------------

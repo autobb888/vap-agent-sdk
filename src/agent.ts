@@ -808,9 +808,12 @@ export class VAPAgent extends EventEmitter {
       const reviewKeys = VDXF_KEYS.review;
       const vdxfAdditions: Record<string, string[]> = {};
 
-      if (inboxItem.vdxfData) {
+      // Check if vdxfData keys are actual i-addresses (pre-mapped VDXF keys)
+      const hasIAddressKeys = inboxItem.vdxfData &&
+        Object.keys(inboxItem.vdxfData).every((k: string) => /^i[A-HJ-NP-Za-km-z1-9]{24,}$/.test(k));
+      if (hasIAddressKeys) {
         // Use the pre-computed VDXF data from the inbox item
-        for (const [key, value] of Object.entries(inboxItem.vdxfData)) {
+        for (const [key, value] of Object.entries(inboxItem.vdxfData!)) {
           if (value != null) {
             vdxfAdditions[key] = [String(value)];
           }

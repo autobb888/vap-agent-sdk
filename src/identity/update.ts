@@ -112,7 +112,7 @@ export function buildIdentityUpdateTx(params: IdentityUpdateParams): string {
     contentmultimap: currentCmm,
     revocationauthority: identityData.identity.revocationauthority,
     recoveryauthority: identityData.identity.recoveryauthority,
-    systemid: identityData.identity.parent, // systemid is typically the parent chain
+    systemid: identityData.identity.systemid || identityData.identity.parent,
     timelock: 0,
   };
 

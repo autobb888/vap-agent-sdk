@@ -112,7 +112,7 @@ function buildIdentityUpdateTx(params) {
         contentmultimap: currentCmm,
         revocationauthority: identityData.identity.revocationauthority,
         recoveryauthority: identityData.identity.recoveryauthority,
-        systemid: identityData.identity.parent, // systemid is typically the parent chain
+        systemid: identityData.identity.systemid || identityData.identity.parent,
         timelock: 0,
     };
     // 3. Create Identity object and get output script

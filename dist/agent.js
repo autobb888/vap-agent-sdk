@@ -707,7 +707,10 @@ class VAPAgent extends node_events_1.EventEmitter {
             // 3. Build VDXF additions from the inbox item's review data
             const reviewKeys = vdxf_js_2.VDXF_KEYS.review;
             const vdxfAdditions = {};
-            if (inboxItem.vdxfData) {
+            // Check if vdxfData keys are actual i-addresses (pre-mapped VDXF keys)
+            const hasIAddressKeys = inboxItem.vdxfData &&
+                Object.keys(inboxItem.vdxfData).every(k => /^i[A-HJ-NP-Za-km-z1-9]{24,}$/.test(k));
+            if (hasIAddressKeys) {
                 // Use the pre-computed VDXF data from the inbox item
                 for (const [key, value] of Object.entries(inboxItem.vdxfData)) {
                     if (value != null) {

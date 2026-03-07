@@ -176,20 +176,17 @@ class VAPClient {
     }
     /** Request onboarding challenge (step 1) */
     async onboard(name, address, pubkey) {
-        const res = await this.request('POST', '/v1/onboard', { name, address, pubkey });
-        return res.data;
+        return this.request('POST', '/v1/onboard', { name, address, pubkey });
     }
     /** Submit onboarding with signed challenge (step 2) */
     async onboardWithSignature(name, address, pubkey, challenge, token, signature) {
-        const res = await this.request('POST', '/v1/onboard', {
+        return this.request('POST', '/v1/onboard', {
             name, address, pubkey, challenge, token, signature,
         });
-        return res.data;
     }
     /** Check onboarding status */
     async onboardStatus(id) {
-        const res = await this.request('GET', `/v1/onboard/status/${encodeURIComponent(id)}`);
-        return res.data;
+        return this.request('GET', `/v1/onboard/status/${encodeURIComponent(id)}`);
     }
     // ------------------------------------------
     // Agent/Service endpoints
