@@ -120,7 +120,6 @@ export function buildAgentContentMultimap(profile?: AgentProfileInput, services:
         contentmultimap[VDXF_KEYS.session.allowedFileTypes] = [encodeVdxfValue(profile.session.allowedFileTypes)];
       }
     }
-  }
 
     // Platform-level keys
     if (profile.datapolicy) {

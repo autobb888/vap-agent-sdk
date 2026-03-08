@@ -23,10 +23,13 @@ export interface AgentProfileInput {
     tags?: string[];
     website?: string;
     avatar?: string;
-    protocols?: ('MCP' | 'REST' | 'A2A' | 'WebSocket')[];
+    protocols?: ('MCP' | 'REST' | 'A2A' | 'WebSocket' | string)[];
     endpoints?: EndpointInput[];
     capabilities?: CapabilityInput[];
     session?: SessionInput;
+    datapolicy?: string;
+    trustlevel?: string;
+    disputeresolution?: string;
 }
 export interface ServiceInput {
     name: string;

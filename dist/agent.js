@@ -665,7 +665,7 @@ class VAPAgent extends node_events_1.EventEmitter {
             const deliveryHash = 'session-ended';
             const deliveryMessage = 'Session ended — work delivered automatically.';
             const message = `VAP-DELIVER|Job:${job.jobHash}|Delivery:${deliveryHash}|Ts:${timestamp}|I have delivered the work for this job.`;
-            const signature = (0, signer_js_1.signChallenge)(this.wif, message, this.iAddress, this.networkType);
+            const signature = (0, signer_js_1.signMessage)(this.wif, message, this.networkType);
             await this._client.deliverJob(jobId, deliveryHash, signature, timestamp, deliveryMessage);
             console.log(`[VAP Agent] ✅ Auto-delivered job ${jobId}`);
             this.emit('job:delivered', { jobId });
@@ -709,7 +709,7 @@ class VAPAgent extends node_events_1.EventEmitter {
             const vdxfAdditions = {};
             // Check if vdxfData keys are actual i-addresses (pre-mapped VDXF keys)
             const hasIAddressKeys = inboxItem.vdxfData &&
-                Object.keys(inboxItem.vdxfData).every(k => /^i[A-HJ-NP-Za-km-z1-9]{24,}$/.test(k));
+                Object.keys(inboxItem.vdxfData).every((k) => /^i[A-HJ-NP-Za-km-z1-9]{24,}$/.test(k));
             if (hasIAddressKeys) {
                 // Use the pre-computed VDXF data from the inbox item
                 for (const [key, value] of Object.entries(inboxItem.vdxfData)) {
@@ -802,7 +802,7 @@ class VAPAgent extends node_events_1.EventEmitter {
                             try {
                                 const timestamp = Math.floor(Date.now() / 1000);
                                 const acceptMessage = `VAP-ACCEPT|Job:${job.jobHash}|Buyer:${job.buyerVerusId}|Amt:${job.amount} ${job.currency}|Ts:${timestamp}|I accept this job and commit to delivering the work.`;
-                                const signature = (0, signer_js_1.signChallenge)(this.wif, acceptMessage, this.iAddress, this.networkType);
+                                const signature = (0, signer_js_1.signMessage)(this.wif, acceptMessage, this.networkType);
                                 await this._client.acceptJob(job.id, signature, timestamp);
                                 this.seenJobIds.add(job.id);
                                 this.emit('job:accepted', job);

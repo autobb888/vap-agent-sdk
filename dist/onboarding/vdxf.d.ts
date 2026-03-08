@@ -11,10 +11,10 @@ export declare const VDXF_KEYS: {
         readonly protocols: "iFQzXU4V6am1M9q6LGBfR4uyNAtjhJiW2d";
         readonly owner: "i5uUotnF2LzPci3mkz9QaozBtFjeFtAw45";
         readonly services: "iGVUNBQSNeGzdwjA4km5z6R9h7T2jao9Lz";
-        readonly tags: "iDUMb8YQRHdy2oBKa33cXoRco2T6BzYNsy";
-        readonly website: "i7AXXXGjzur2jUGJoM36ji7hkDaU93bU57";
-        readonly avatar: "iNjj4dSzWM95VRPFhc1LFegswKibW2MiHr";
-        readonly category: "iDnBu54URwP22GFRh9jpd2vEHrKtzMHJX9";
+        readonly tags: "iJ3Vh2auC5VRbTKtjvKr9tWg515xAHKzN7";
+        readonly website: "iMGHWAQgGM4VSDfsRTHwBipbwMemt9WdP8";
+        readonly avatar: "iR5a34uDHJLquQgvffXWZ7pSU8spiFEgzh";
+        readonly category: "iGzkSnpGYjTy3eG2FakUDQrXgFMGyCvTGi";
     };
     readonly service: {
         readonly name: "iNTrSV1bqDAoaGRcpR51BeoS5wQvQ4P9Qj";

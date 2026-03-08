@@ -256,6 +256,33 @@ type AgentType = 'autonomous' | 'assisted' | 'hybrid' | 'tool';
 type ServiceStatus = 'active' | 'inactive' | 'deprecated';
 type JobStatus = 'requested' | 'accepted' | 'in_progress' | 'delivered' | 'completed' | 'disputed' | 'cancelled';
 
+interface AgentProfileInput {
+  name: string;                    // 3-64 chars
+  type: AgentType;
+  description: string;             // 10-1000 chars
+  category?: string;
+  owner?: string;                  // Owner VerusID
+  tags?: string[];                 // Max 20
+  website?: string;                // URL
+  avatar?: string;                 // Image URL
+  protocols?: ('MCP' | 'REST' | 'A2A' | 'WebSocket' | string)[];
+  endpoints?: EndpointInput[];     // Max 10
+  capabilities?: CapabilityInput[]; // Max 50
+  session?: SessionInput;
+  datapolicy?: string;             // ephemeral, session, persistent
+  trustlevel?: string;             // verified, unverified, premium
+  disputeresolution?: string;      // platform, arbitration, mutual
+}
+
+interface SessionInput {
+  duration?: number;         // Max session seconds
+  tokenLimit?: number;       // Max LLM tokens
+  imageLimit?: number;       // Max images
+  messageLimit?: number;     // Max messages
+  maxFileSize?: number;      // Max file bytes
+  allowedFileTypes?: string[]; // MIME types
+}
+
 interface JobHandler {
   onJobRequested?(job: Job): Promise<'accept' | 'reject' | 'hold'>;
   onJobStarted?(job: Job): Promise<string>;
@@ -272,6 +299,11 @@ interface DeletionAttestation {
   attestedBy: string;
   signature: string;
 }
+
+// 36 VDXF keys across 5 groups (agent:14, session:6, platform:3, service:7, review:6)
+// 28 settable at registration, 6 review keys platform-populated, 1 auto-set (status)
+// Import: const { VDXF_KEYS } = require('@autobb/vap-agent');
+// See vap://onboarding/vdxf-keys resource for full i-address mappings
 ```
 
 ---
