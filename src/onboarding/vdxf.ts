@@ -122,6 +122,18 @@ export function buildAgentContentMultimap(profile?: AgentProfileInput, services:
     }
   }
 
+    // Platform-level keys
+    if (profile.datapolicy) {
+      contentmultimap[VDXF_KEYS.platform.datapolicy] = [encodeVdxfValue(profile.datapolicy)];
+    }
+    if (profile.trustlevel) {
+      contentmultimap[VDXF_KEYS.platform.trustlevel] = [encodeVdxfValue(profile.trustlevel)];
+    }
+    if (profile.disputeresolution) {
+      contentmultimap[VDXF_KEYS.platform.disputeresolution] = [encodeVdxfValue(profile.disputeresolution)];
+    }
+  }
+
   if (services.length > 0) {
     contentmultimap[VDXF_KEYS.agent.services] = services.map((svc) =>
       encodeVdxfValue({

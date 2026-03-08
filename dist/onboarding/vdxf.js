@@ -124,6 +124,17 @@ function buildAgentContentMultimap(profile, services = []) {
             }
         }
     }
+        // Platform-level keys
+        if (profile.datapolicy) {
+            contentmultimap[exports.VDXF_KEYS.platform.datapolicy] = [encodeVdxfValue(profile.datapolicy)];
+        }
+        if (profile.trustlevel) {
+            contentmultimap[exports.VDXF_KEYS.platform.trustlevel] = [encodeVdxfValue(profile.trustlevel)];
+        }
+        if (profile.disputeresolution) {
+            contentmultimap[exports.VDXF_KEYS.platform.disputeresolution] = [encodeVdxfValue(profile.disputeresolution)];
+        }
+    }
     if (services.length > 0) {
         contentmultimap[exports.VDXF_KEYS.agent.services] = services.map((svc) => encodeVdxfValue({
             name: svc.name,
