@@ -48,6 +48,16 @@ export type { SessionEndingEvent, SessionExpiringEvent, JobStatusChangedEvent, R
 // Job types
 export type { JobHandler, JobHandlerConfig, AutoAcceptRule } from './jobs/types.js';
 
+// Webhook agent — event-driven integration for external frameworks
+export { WebhookAgent, type WebhookAgentConfig, type WebhookPayload, type WebhookResult } from './webhook/index.js';
+
+// Framework adapters
+export { BaseAdapter, type BaseAdapterConfig } from './adapters/index.js';
+export { HttpAdapter, type HttpAdapterConfig, type GenericRequest, type GenericResponse } from './adapters/index.js';
+export { N8nAdapter, type N8nWebhookItem, type N8nResult } from './adapters/index.js';
+export { LangChainAdapter, type ToolDefinition } from './adapters/index.js';
+export { CrewAIAdapter, type CrewAIToolSchema } from './adapters/index.js';
+
 // Privacy tiers
 export { PRIVACY_TIERS, type PrivacyTier, type PrivacyTierMeta } from './privacy/tiers.js';
 

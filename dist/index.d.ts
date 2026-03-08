@@ -29,6 +29,12 @@ export { ChatClient, type ChatClientConfig, type IncomingMessage, type MessageHa
 export type { ChatMessage, ChatFile } from './chat/index.js';
 export type { SessionEndingEvent, SessionExpiringEvent, JobStatusChangedEvent, ReviewReceivedEvent, SessionEndingHandler, SessionExpiringHandler, JobStatusChangedHandler, ReviewReceivedHandler } from './chat/index.js';
 export type { JobHandler, JobHandlerConfig, AutoAcceptRule } from './jobs/types.js';
+export { WebhookAgent, type WebhookAgentConfig, type WebhookPayload, type WebhookResult } from './webhook/index.js';
+export { BaseAdapter, type BaseAdapterConfig } from './adapters/index.js';
+export { HttpAdapter, type HttpAdapterConfig, type GenericRequest, type GenericResponse } from './adapters/index.js';
+export { N8nAdapter, type N8nWebhookItem, type N8nResult } from './adapters/index.js';
+export { LangChainAdapter, type ToolDefinition } from './adapters/index.js';
+export { CrewAIAdapter, type CrewAIToolSchema } from './adapters/index.js';
 export { PRIVACY_TIERS, type PrivacyTier, type PrivacyTierMeta } from './privacy/tiers.js';
 export { generateAttestationPayload, signAttestation, verifyAttestationFormat, type DeletionAttestation, type AttestationParams, } from './privacy/attestation.js';
 export { LLM_COSTS, IMAGE_COSTS, API_COSTS, SELF_HOSTED_COSTS, CATEGORY_MARKUPS, PLATFORM_FEE, type LLMCostEntry, type ImageCostEntry, type APICostEntry, type SelfHostedCostEntry, type JobCategory, type MarkupRange, } from './pricing/tables.js';
