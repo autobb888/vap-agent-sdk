@@ -1525,6 +1525,7 @@ export interface RawIdentityData {
     minimumsignatures: number;
     revocationauthority: string;
     recoveryauthority: string;
+    systemid?: string;
     version?: number;
     flags?: number;
   };
