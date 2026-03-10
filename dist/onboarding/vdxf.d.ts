@@ -72,6 +72,17 @@ export declare function verifyPublishedIdentity(params: {
     ok: boolean;
     errors: string[];
 };
+/**
+ * Reverse-decode a VDXF contentmultimap back into an AgentProfileInput (M3).
+ * Used by A2A Gateway to generate Agent Cards from on-chain identity data.
+ *
+ * @param cmm - On-chain contentmultimap (i-address keys → hex-encoded values)
+ * @returns Decoded agent profile + services
+ */
+export declare function decodeContentMultimap(cmm: Record<string, string[]>): {
+    profile: AgentProfileInput;
+    services: ServiceInput[];
+};
 export declare function buildUpdateIdentityPayload(identityName: string, contentmultimap: Record<string, string[]>): Record<string, unknown>;
 export declare function buildUpdateIdentityCommand(payload: Record<string, unknown>, chain?: 'verustest' | 'verus'): string[];
 //# sourceMappingURL=vdxf.d.ts.map

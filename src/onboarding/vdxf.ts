@@ -257,6 +257,84 @@ export function verifyPublishedIdentity(params: {
   return { ok: errors.length === 0, errors };
 }
 
+/**
+ * Reverse-decode a VDXF contentmultimap back into an AgentProfileInput (M3).
+ * Used by A2A Gateway to generate Agent Cards from on-chain identity data.
+ *
+ * @param cmm - On-chain contentmultimap (i-address keys → hex-encoded values)
+ * @returns Decoded agent profile + services
+ */
+export function decodeContentMultimap(cmm: Record<string, string[]>): {
+  profile: AgentProfileInput;
+  services: ServiceInput[];
+} {
+  // Build reverse lookup: i-address → [group, field]
+  const reverseMap = new Map<string, [string, string]>();
+  for (const [group, keys] of Object.entries(VDXF_KEYS)) {
+    for (const [field, iAddr] of Object.entries(keys)) {
+      reverseMap.set(iAddr, [group, field]);
+    }
+  }
+
+  const profile: Partial<AgentProfileInput> = {};
+  const session: Partial<NonNullable<AgentProfileInput['session']>> = {};
+  const services: ServiceInput[] = [];
+
+  for (const [key, values] of Object.entries(cmm)) {
+    const mapping = reverseMap.get(key);
+    if (!mapping || !values?.length) continue;
+
+    const [group, field] = mapping;
+
+    if (group === 'agent') {
+      switch (field) {
+        case 'name': profile.name = decodeVdxfValue(values[0]) as string; break;
+        case 'type': profile.type = decodeVdxfValue(values[0]) as AgentProfileInput['type']; break;
+        case 'description': profile.description = decodeVdxfValue(values[0]) as string; break;
+        case 'category': profile.category = decodeVdxfValue(values[0]) as string; break;
+        case 'owner': profile.owner = decodeVdxfValue(values[0]) as string; break;
+        case 'tags': profile.tags = decodeVdxfValue(values[0]) as string[]; break;
+        case 'website': profile.website = decodeVdxfValue(values[0]) as string; break;
+        case 'avatar': profile.avatar = decodeVdxfValue(values[0]) as string; break;
+        case 'protocols': profile.protocols = decodeVdxfValue(values[0]) as string[]; break;
+        case 'endpoints': profile.endpoints = values.map(v => decodeVdxfValue(v) as AgentProfileInput['endpoints'] extends (infer T)[] | undefined ? T : never); break;
+        case 'capabilities': profile.capabilities = values.map(v => decodeVdxfValue(v) as AgentProfileInput['capabilities'] extends (infer T)[] | undefined ? T : never); break;
+        case 'services':
+          for (const v of values) {
+            services.push(decodeVdxfValue(v) as ServiceInput);
+          }
+          break;
+      }
+    } else if (group === 'session') {
+      const decoded = decodeVdxfValue(values[0]);
+      switch (field) {
+        case 'duration': session.duration = decoded as number; break;
+        case 'tokenLimit': session.tokenLimit = decoded as number; break;
+        case 'imageLimit': session.imageLimit = decoded as number; break;
+        case 'messageLimit': session.messageLimit = decoded as number; break;
+        case 'maxFileSize': session.maxFileSize = decoded as number; break;
+        case 'allowedFileTypes': session.allowedFileTypes = decoded as string[]; break;
+      }
+    } else if (group === 'platform') {
+      const decoded = decodeVdxfValue(values[0]) as string;
+      switch (field) {
+        case 'datapolicy': profile.datapolicy = decoded; break;
+        case 'trustlevel': profile.trustlevel = decoded; break;
+        case 'disputeresolution': profile.disputeresolution = decoded; break;
+      }
+    }
+  }
+
+  if (Object.keys(session).length > 0) {
+    profile.session = session as AgentProfileInput['session'];
+  }
+
+  return {
+    profile: profile as AgentProfileInput,
+    services,
+  };
+}
+
 export function buildUpdateIdentityPayload(identityName: string, contentmultimap: Record<string, string[]>): Record<string, unknown> {
   const clean = identityName.replace(/@$/, '');
   const parts = clean.split('.');

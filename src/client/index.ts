@@ -15,17 +15,30 @@ export interface VAPClientConfig {
   sessionToken?: string;
   /** Request timeout in ms (default: 30000) */
   timeout?: number;
+  /** Max retry attempts for transient failures (default: 3) */
+  maxRetries?: number;
+  /** Called on 401/403 to re-authenticate before retry */
+  onSessionExpired?: () => Promise<void>;
 }
 
 export class VAPClient {
   private baseUrl: string;
   private sessionToken: string | null;
   private timeout: number;
+  private maxRetries: number;
+  private onSessionExpired: (() => Promise<void>) | null;
 
   constructor(config: VAPClientConfig) {
     this.baseUrl = config.vapUrl.replace(/\/+$/, '');
     this.sessionToken = config.sessionToken || null;
     this.timeout = config.timeout || 30_000;
+    this.maxRetries = config.maxRetries ?? 3;
+    this.onSessionExpired = config.onSessionExpired || null;
+  }
+
+  /** Set the re-auth callback (used by VAPAgent to wire login()) */
+  setOnSessionExpired(cb: (() => Promise<void>) | null): void {
+    this.onSessionExpired = cb;
   }
 
   setSessionToken(token: string): void {
@@ -48,7 +61,21 @@ export class VAPClient {
     return this.baseUrl;
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  /** Check if an error is retryable (transient network/server failure) */
+  private isRetryable(e: unknown): boolean {
+    if (e instanceof VAPError) {
+      // 429 = rate limited, 5xx = server error
+      return e.statusCode === 429 || e.statusCode >= 500;
+    }
+    // Network errors (not our timeout) are retryable
+    if (e instanceof Error && e.name !== 'AbortError') {
+      return true;
+    }
+    return false;
+  }
+
+  /** Core request logic (single attempt) */
+  private async _doRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeout);
 
@@ -114,6 +141,44 @@ export class VAPClient {
     }
   }
 
+  /** Request with automatic retry (transient failures) and re-auth (401/403) */
+  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt < this.maxRetries; attempt++) {
+      try {
+        return await this._doRequest<T>(method, path, body);
+      } catch (e) {
+        lastError = e;
+
+        // Auth expired — try re-auth callback once (first attempt only)
+        if (e instanceof VAPError && (e.statusCode === 401 || e.statusCode === 403)) {
+          if (attempt === 0 && this.onSessionExpired) {
+            try {
+              await this.onSessionExpired();
+              continue; // retry with fresh session
+            } catch {
+              throw e; // re-auth failed, throw original error
+            }
+          }
+          throw e; // no callback or already retried
+        }
+
+        // Only retry on transient errors
+        if (!this.isRetryable(e) || attempt === this.maxRetries - 1) {
+          throw e;
+        }
+
+        // Exponential backoff (longer for 429)
+        const baseDelay = (e instanceof VAPError && e.statusCode === 429) ? 5000 : 1000;
+        const delay = baseDelay * Math.pow(2, attempt);
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+
+    throw lastError;
+  }
+
   // ------------------------------------------
   // Auth endpoints
   // ------------------------------------------
@@ -127,6 +192,67 @@ export class VAPClient {
       throw new VAPError('Invalid auth challenge response: missing data', 'PARSE_ERROR', 500);
     }
     return res.data;
+  }
+
+  /**
+   * Single-call authentication for bridges/frameworks (M1).
+   * Handles: challenge → sign → login → set session token.
+   * Bridges can use VAPClient directly without VAPAgent.
+   *
+   * @param wif - Private key in WIF format
+   * @param verusId - Identity name (e.g. "myagent.agentplatform@")
+   * @param network - 'verus' or 'verustest' (default: 'verustest')
+   * @returns Session token string
+   */
+  async authenticateWithWIF(
+    wif: string,
+    verusId: string,
+    network: 'verus' | 'verustest' = 'verustest',
+  ): Promise<string> {
+    // Step 1: Get challenge
+    const { challengeId, challenge } = await this.getAuthChallenge();
+
+    // Step 2: Sign challenge
+    const signature = verusSignMessage(wif, challenge, network);
+
+    // Step 3: Login
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeout);
+
+    let loginRes: Response;
+    try {
+      loginRes = await fetch(`${this.baseUrl}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({ challengeId, verusId, signature }),
+      });
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') {
+        throw new VAPError(`Login timed out after ${this.timeout}ms`, 'TIMEOUT', 408);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!loginRes.ok) {
+      let errMsg = loginRes.statusText;
+      try {
+        const err = await loginRes.json() as { error?: { message?: string } };
+        errMsg = err.error?.message || errMsg;
+      } catch { /* non-JSON */ }
+      throw new VAPError(`Login failed: ${errMsg}`, 'AUTH_FAILED', loginRes.status);
+    }
+
+    const cookies = loginRes.headers.get('set-cookie');
+    const match = cookies?.match(/verus_session=([^;]+)/);
+    if (!match) {
+      throw new VAPError('Login succeeded but no session cookie returned', 'AUTH_FAILED', 500);
+    }
+
+    this.setSessionToken(match[1]);
+    return match[1];
   }
 
   // ------------------------------------------
@@ -271,7 +397,7 @@ export class VAPClient {
   // ------------------------------------------
 
   /** Register agent profile (signed payload, requires cookie auth) */
-  async registerAgent(data: RegisterAgentData): Promise<{ agentId: string }> {
+  async registerAgent(data: RegisterAgentData | Record<string, unknown>): Promise<{ agentId: string }> {
     const res = await this.request<{ data: { agentId: string } }>('POST', '/v1/agents/register', data);
     return res.data;
   }

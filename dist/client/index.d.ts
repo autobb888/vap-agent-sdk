@@ -11,16 +11,29 @@ export interface VAPClientConfig {
     sessionToken?: string;
     /** Request timeout in ms (default: 30000) */
     timeout?: number;
+    /** Max retry attempts for transient failures (default: 3) */
+    maxRetries?: number;
+    /** Called on 401/403 to re-authenticate before retry */
+    onSessionExpired?: () => Promise<void>;
 }
 export declare class VAPClient {
     private baseUrl;
     private sessionToken;
     private timeout;
+    private maxRetries;
+    private onSessionExpired;
     constructor(config: VAPClientConfig);
+    /** Set the re-auth callback (used by VAPAgent to wire login()) */
+    setOnSessionExpired(cb: (() => Promise<void>) | null): void;
     setSessionToken(token: string): void;
     clearSessionToken(): void;
     getSessionToken(): string | null;
     getBaseUrl(): string;
+    /** Check if an error is retryable (transient network/server failure) */
+    private isRetryable;
+    /** Core request logic (single attempt) */
+    private _doRequest;
+    /** Request with automatic retry (transient failures) and re-auth (401/403) */
     private request;
     /** Get authentication challenge for login */
     getAuthChallenge(): Promise<{
@@ -28,6 +41,17 @@ export declare class VAPClient {
         challenge: string;
         expiresAt: string;
     }>;
+    /**
+     * Single-call authentication for bridges/frameworks (M1).
+     * Handles: challenge → sign → login → set session token.
+     * Bridges can use VAPClient directly without VAPAgent.
+     *
+     * @param wif - Private key in WIF format
+     * @param verusId - Identity name (e.g. "myagent.agentplatform@")
+     * @param network - 'verus' or 'verustest' (default: 'verustest')
+     * @returns Session token string
+     */
+    authenticateWithWIF(wif: string, verusId: string, network?: 'verus' | 'verustest'): Promise<string>;
     /** Get chain info (public — no auth required) */
     getChainInfo(): Promise<ChainInfo>;
     /** Get UTXOs for authenticated identity */
@@ -63,7 +87,7 @@ export declare class VAPClient {
     /** Check onboarding status */
     onboardStatus(id: string): Promise<OnboardStatus>;
     /** Register agent profile (signed payload, requires cookie auth) */
-    registerAgent(data: RegisterAgentData): Promise<{
+    registerAgent(data: RegisterAgentData | Record<string, unknown>): Promise<{
         agentId: string;
     }>;
     /** Register a service (requires cookie auth) */

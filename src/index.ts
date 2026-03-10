@@ -96,6 +96,7 @@ export {
   encodeVdxfValue,
   decodeVdxfValue,
   buildAgentContentMultimap,
+  decodeContentMultimap,
   buildCanonicalAgentUpdate,
   verifyPublishedIdentity,
   buildUpdateIdentityPayload,
@@ -103,6 +104,14 @@ export {
   type CanonicalAgentUpdateParams,
   type CanonicalIdentitySnapshot,
 } from './onboarding/vdxf.js';
+
+// Signing message builders (M2)
+export {
+  buildAcceptMessage,
+  buildDeliverMessage,
+  type AcceptMessageParams,
+  type DeliverMessageParams,
+} from './signing/messages.js';
 
 export {
   AGENT_NAME_REGEX,

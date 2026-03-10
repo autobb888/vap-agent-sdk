@@ -139,6 +139,7 @@ export declare class VAPAgent extends EventEmitter {
     }>;
     /**
      * Register a canary token with SafeChat (non-fatal on failure).
+     * Uses VAPClient.registerCanary() for retry + error handling (S3).
      */
     private registerCanaryToken;
     /**

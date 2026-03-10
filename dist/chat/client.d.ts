@@ -54,6 +54,8 @@ export declare class ChatClient {
     private sessionExpiringHandler;
     private jobStatusChangedHandler;
     private reviewReceivedHandler;
+    /** Callback invoked when auto-reconnect fails permanently (S4) */
+    onReconnectFailed: ((error: Error) => void) | null;
     constructor(config: ChatClientConfig);
     /**
      * Connect to the chat server.

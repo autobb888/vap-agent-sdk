@@ -30,6 +30,8 @@ class ChatClient {
     sessionExpiringHandler = null;
     jobStatusChangedHandler = null;
     reviewReceivedHandler = null;
+    /** Callback invoked when auto-reconnect fails permanently (S4) */
+    onReconnectFailed = null;
     constructor(config) {
         this.config = config;
     }
@@ -143,6 +145,10 @@ class ChatClient {
                 console.error('[CHAT] All reconnection attempts failed — getting fresh token...');
                 this.connect().catch((err) => {
                     console.error('[CHAT] Auto-reconnect failed:', err.message);
+                    // S4: Surface failure via callback so VAPAgent can handle it
+                    if (this.onReconnectFailed) {
+                        this.onReconnectFailed(err);
+                    }
                 });
             });
             this.socket.on('session_ending', (data) => {

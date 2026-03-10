@@ -58,6 +58,11 @@ class VAPAgent extends node_events_1.EventEmitter {
         }
         this.vapUrl = config.vapUrl;
         this._client = new index_js_1.VAPClient({ vapUrl: config.vapUrl });
+        // Wire auto re-auth: on 401/403, VAPClient calls login() to refresh session (S2)
+        this._client.setOnSessionExpired(async () => {
+            console.log('[VAP Agent] Session expired, re-authenticating...');
+            await this.login();
+        });
         this.wif = config.wif || null;
         this.identityName = config.identityName || null;
         this.iAddress = config.iAddress || null;
@@ -290,11 +295,11 @@ class VAPAgent extends node_events_1.EventEmitter {
             throw new Error('Identity name required (call register() first or set identityName)');
         }
         console.log(`[VAP Agent] Registering with VAP platform...`);
-        // Step 1: Login
+        // Step 1: Login (sets session token on VAPClient for subsequent requests)
         console.log(`[VAP Agent] Logging in...`);
-        const cookies = await this.login();
+        await this.login();
         console.log(`[VAP Agent] ✅ Logged in`);
-        // Step 2: Register agent with signed payload
+        // Step 2: Register agent with signed payload (S3: use VAPClient.request() for retry+error handling)
         console.log(`[VAP Agent] Submitting registration...`);
         const payload = {
             verusId: this.identityName,
@@ -304,56 +309,28 @@ class VAPAgent extends node_events_1.EventEmitter {
             data: agentData,
         };
         const message = (0, json_canonicalize_1.canonicalize)(payload);
-        // /v1/agents/register contract: canonical payload + verifymessage signature
         const regSignature = (0, signer_js_1.signMessage)(this.wif, message, this.networkType);
-        const regController = new AbortController();
-        const regTimer = setTimeout(() => regController.abort(), FETCH_TIMEOUT);
-        let regRes;
+        let isAlreadyRegistered = false;
+        let agentIdResult = '';
         try {
-            regRes = await fetch(`${this.vapUrl}/v1/agents/register`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Cookie': cookies,
-                },
-                signal: regController.signal,
-                body: JSON.stringify({ ...payload, signature: regSignature }),
-            });
-        }
-        catch (err) {
-            if (err.name === 'AbortError') {
-                throw new Error(`Registration request timed out after ${FETCH_TIMEOUT}ms`);
-            }
-            throw err;
-        }
-        finally {
-            clearTimeout(regTimer);
-        }
-        let responseData;
-        try {
-            responseData = await regRes.json();
-        }
-        catch {
-            responseData = {};
-        }
-        const isAlreadyRegistered = regRes.status === 409;
-        if (isAlreadyRegistered) {
-            console.log(`[VAP Agent] Agent already registered`);
-        }
-        else if (!regRes.ok) {
-            const errMsg = responseData.error?.message || regRes.statusText;
-            throw new Error(`Registration failed: ${errMsg}`);
-        }
-        else if (!responseData.data) {
-            throw new Error('Registration succeeded but response body was missing data');
-        }
-        else {
+            const result = await this._client.registerAgent({ ...payload, signature: regSignature });
+            agentIdResult = result.agentId;
             console.log(`[VAP Agent] ✅ Registered with VAP platform`);
-            this.emit('registeredWithVAP', { agentId: responseData.data?.agentId });
+            this.emit('registeredWithVAP', { agentId: agentIdResult });
+        }
+        catch (regErr) {
+            // 409 = already registered — continue (non-fatal)
+            if (regErr instanceof Error && 'statusCode' in regErr && regErr.statusCode === 409) {
+                isAlreadyRegistered = true;
+                console.log(`[VAP Agent] Agent already registered`);
+            }
+            else {
+                throw regErr;
+            }
         }
         // Auto-register canary token (non-fatal on failure, runs even on 409 re-registration)
         if (agentData.canary !== false) {
-            await this.registerCanaryToken(cookies);
+            await this.registerCanaryToken();
         }
         // Build VDXF contentmultimap for on-chain publishing
         const profile = {
@@ -374,42 +351,22 @@ class VAPAgent extends node_events_1.EventEmitter {
         const identityName = this.identityName;
         const updatePayload = (0, vdxf_js_1.buildUpdateIdentityPayload)(identityName, contentmultimap);
         this.emit('vdxf:payload', { contentmultimap, updatePayload });
-        const agentId = isAlreadyRegistered
-            ? 'existing'
-            : String(responseData.data?.agentId ?? '');
-        return { agentId };
+        return { agentId: isAlreadyRegistered ? 'existing' : agentIdResult };
     }
     /**
      * Register a canary token with SafeChat (non-fatal on failure).
+     * Uses VAPClient.registerCanary() for retry + error handling (S3).
      */
-    async registerCanaryToken(cookies) {
+    async registerCanaryToken() {
         try {
             const canary = (0, canary_js_1.generateCanary)();
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
-            let canaryRes;
-            try {
-                canaryRes = await fetch(`${this.vapUrl}/v1/me/canary`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Cookie': cookies },
-                    signal: controller.signal,
-                    body: JSON.stringify(canary.registration),
-                });
-            }
-            finally {
-                clearTimeout(timer);
-            }
-            if (canaryRes.ok) {
-                this.canaryConfig = canary;
-                this.emit('canary:registered', { active: true });
-                console.log('[VAP Agent] Canary token registered with SafeChat');
-            }
-            else {
-                console.warn('[VAP Agent] Canary registration failed (non-fatal) — outbound leak detection disabled');
-            }
+            await this._client.registerCanary(canary.registration);
+            this.canaryConfig = canary;
+            this.emit('canary:registered', { active: true });
+            console.log('[VAP Agent] Canary token registered with SafeChat');
         }
         catch (e) {
-            console.warn('[VAP Agent] Canary registration error (non-fatal):', e.message);
+            console.warn('[VAP Agent] Canary registration failed (non-fatal):', e.message);
         }
     }
     /**
@@ -421,43 +378,11 @@ class VAPAgent extends node_events_1.EventEmitter {
             throw new Error('Identity name required');
         }
         console.log(`[VAP Agent] Registering service: ${serviceData.name}...`);
-        const cookies = await this.login();
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
-        let serviceRes;
-        try {
-            serviceRes = await fetch(`${this.vapUrl}/v1/me/services`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Cookie': cookies,
-                },
-                signal: controller.signal,
-                body: JSON.stringify(serviceData),
-            });
-        }
-        catch (err) {
-            if (err.name === 'AbortError') {
-                throw new Error(`Service registration request timed out after ${FETCH_TIMEOUT}ms`);
-            }
-            throw err;
-        }
-        finally {
-            clearTimeout(timer);
-        }
-        let result;
-        try {
-            result = await serviceRes.json();
-        }
-        catch {
-            result = {};
-        }
-        if (!serviceRes.ok) {
-            const errMsg = result.error?.message || serviceRes.statusText;
-            throw new Error(`Service registration failed: ${errMsg}`);
-        }
+        await this.login();
+        // S3: Use VAPClient.registerService() for retry + error handling
+        const result = await this._client.registerService(serviceData);
         console.log(`[VAP Agent] ✅ Service registered: ${serviceData.name}`);
-        return { serviceId: String(result.data?.serviceId ?? '') };
+        return result;
     }
     /**
      * Set the job handler (how your agent responds to jobs).
@@ -533,6 +458,11 @@ class VAPAgent extends node_events_1.EventEmitter {
             vapUrl: this._client.getBaseUrl(),
             sessionToken: this._client.getSessionToken(),
         });
+        // S4: Surface chat reconnect failures so callers can handle silent death
+        this.chatClient.onReconnectFailed = (err) => {
+            this.emit('chat:reconnectFailed', err);
+            this.emit('error', new Error(`Chat permanently disconnected: ${err.message}`));
+        };
         this.chatClient.onMessage((msg) => {
             // Don't handle our own messages — check both iAddress and identityName independently
             if (msg.senderVerusId === this.iAddress || msg.senderVerusId === this.identityName)
@@ -869,39 +799,10 @@ class VAPAgent extends node_events_1.EventEmitter {
      * Returns the systemPromptInsert for embedding; the raw token is kept internal.
      */
     async enableCanaryProtection() {
-        const cookies = await this.login();
+        await this.login();
         const canary = (0, canary_js_1.generateCanary)();
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
-        let res;
-        try {
-            res = await fetch(`${this.vapUrl}/v1/me/canary`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Cookie': cookies },
-                signal: controller.signal,
-                body: JSON.stringify(canary.registration),
-            });
-        }
-        catch (err) {
-            if (err.name === 'AbortError') {
-                throw new Error(`Canary registration request timed out after ${FETCH_TIMEOUT}ms`);
-            }
-            throw err;
-        }
-        finally {
-            clearTimeout(timer);
-        }
-        let data;
-        try {
-            data = await res.json();
-        }
-        catch {
-            data = {};
-        }
-        if (!res.ok) {
-            const errMsg = data.error?.message || res.statusText;
-            throw new Error(`Canary registration failed: ${errMsg}`);
-        }
+        // S3: Use VAPClient.registerCanary() for retry + error handling
+        await this._client.registerCanary(canary.registration);
         this.canaryConfig = canary;
         this.emit('canary:registered', { active: true });
         return { active: true, systemPromptInsert: canary.systemPromptInsert };

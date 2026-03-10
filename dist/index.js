@@ -6,8 +6,8 @@
  * on the Verus Agent Platform — no Verus daemon required.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.validateUrl = exports.validateTags = exports.validateDescription = exports.validateAgentType = exports.validateAgentName = exports.VALID_TYPES = exports.VALID_PROTOCOLS = exports.RESERVED_NAMES = exports.AGENT_NAME_REGEX = exports.buildUpdateIdentityCommand = exports.buildUpdateIdentityPayload = exports.verifyPublishedIdentity = exports.buildCanonicalAgentUpdate = exports.buildAgentContentMultimap = exports.decodeVdxfValue = exports.encodeVdxfValue = exports.getCanonicalVdxfDefinitionCount = exports.VDXF_KEYS = exports.finalizeOnboarding = exports.privacyPremium = exports.recommendPrice = exports.estimateJobCost = exports.PLATFORM_FEE = exports.CATEGORY_MARKUPS = exports.SELF_HOSTED_COSTS = exports.API_COSTS = exports.IMAGE_COSTS = exports.LLM_COSTS = exports.verifyAttestationFormat = exports.signAttestation = exports.generateAttestationPayload = exports.PRIVACY_TIERS = exports.ChatClient = exports.getDefaultPolicy = exports.POLICY_LABELS = exports.protectSystemPrompt = exports.checkForCanaryLeak = exports.generateCanary = exports.wifToPubkey = exports.wifToAddress = exports.selectUtxos = exports.buildPayment = exports.buildIdentityUpdateTx = exports.signChallenge = exports.signMessage = exports.keypairFromWIF = exports.generateKeypair = exports.VAPError = exports.VAPClient = exports.VAPAgent = void 0;
-exports.validateSessionInput = exports.validateCapability = exports.validateEndpoint = exports.validateProtocols = void 0;
+exports.validateAgentType = exports.validateAgentName = exports.VALID_TYPES = exports.VALID_PROTOCOLS = exports.RESERVED_NAMES = exports.AGENT_NAME_REGEX = exports.buildDeliverMessage = exports.buildAcceptMessage = exports.buildUpdateIdentityCommand = exports.buildUpdateIdentityPayload = exports.verifyPublishedIdentity = exports.buildCanonicalAgentUpdate = exports.decodeContentMultimap = exports.buildAgentContentMultimap = exports.decodeVdxfValue = exports.encodeVdxfValue = exports.getCanonicalVdxfDefinitionCount = exports.VDXF_KEYS = exports.finalizeOnboarding = exports.privacyPremium = exports.recommendPrice = exports.estimateJobCost = exports.PLATFORM_FEE = exports.CATEGORY_MARKUPS = exports.SELF_HOSTED_COSTS = exports.API_COSTS = exports.IMAGE_COSTS = exports.LLM_COSTS = exports.verifyAttestationFormat = exports.signAttestation = exports.generateAttestationPayload = exports.PRIVACY_TIERS = exports.ChatClient = exports.getDefaultPolicy = exports.POLICY_LABELS = exports.protectSystemPrompt = exports.checkForCanaryLeak = exports.generateCanary = exports.wifToPubkey = exports.wifToAddress = exports.selectUtxos = exports.buildPayment = exports.buildIdentityUpdateTx = exports.signChallenge = exports.signMessage = exports.keypairFromWIF = exports.generateKeypair = exports.VAPError = exports.VAPClient = exports.VAPAgent = void 0;
+exports.validateSessionInput = exports.validateCapability = exports.validateEndpoint = exports.validateProtocols = exports.validateUrl = exports.validateTags = exports.validateDescription = void 0;
 // Core agent class
 var agent_js_1 = require("./agent.js");
 Object.defineProperty(exports, "VAPAgent", { enumerable: true, get: function () { return agent_js_1.VAPAgent; } });
@@ -73,10 +73,15 @@ Object.defineProperty(exports, "getCanonicalVdxfDefinitionCount", { enumerable: 
 Object.defineProperty(exports, "encodeVdxfValue", { enumerable: true, get: function () { return vdxf_js_1.encodeVdxfValue; } });
 Object.defineProperty(exports, "decodeVdxfValue", { enumerable: true, get: function () { return vdxf_js_1.decodeVdxfValue; } });
 Object.defineProperty(exports, "buildAgentContentMultimap", { enumerable: true, get: function () { return vdxf_js_1.buildAgentContentMultimap; } });
+Object.defineProperty(exports, "decodeContentMultimap", { enumerable: true, get: function () { return vdxf_js_1.decodeContentMultimap; } });
 Object.defineProperty(exports, "buildCanonicalAgentUpdate", { enumerable: true, get: function () { return vdxf_js_1.buildCanonicalAgentUpdate; } });
 Object.defineProperty(exports, "verifyPublishedIdentity", { enumerable: true, get: function () { return vdxf_js_1.verifyPublishedIdentity; } });
 Object.defineProperty(exports, "buildUpdateIdentityPayload", { enumerable: true, get: function () { return vdxf_js_1.buildUpdateIdentityPayload; } });
 Object.defineProperty(exports, "buildUpdateIdentityCommand", { enumerable: true, get: function () { return vdxf_js_1.buildUpdateIdentityCommand; } });
+// Signing message builders (M2)
+var messages_js_1 = require("./signing/messages.js");
+Object.defineProperty(exports, "buildAcceptMessage", { enumerable: true, get: function () { return messages_js_1.buildAcceptMessage; } });
+Object.defineProperty(exports, "buildDeliverMessage", { enumerable: true, get: function () { return messages_js_1.buildDeliverMessage; } });
 var validation_js_1 = require("./onboarding/validation.js");
 Object.defineProperty(exports, "AGENT_NAME_REGEX", { enumerable: true, get: function () { return validation_js_1.AGENT_NAME_REGEX; } });
 Object.defineProperty(exports, "RESERVED_NAMES", { enumerable: true, get: function () { return validation_js_1.RESERVED_NAMES; } });

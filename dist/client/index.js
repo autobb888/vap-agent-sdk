@@ -11,10 +11,18 @@ class VAPClient {
     baseUrl;
     sessionToken;
     timeout;
+    maxRetries;
+    onSessionExpired;
     constructor(config) {
         this.baseUrl = config.vapUrl.replace(/\/+$/, '');
         this.sessionToken = config.sessionToken || null;
         this.timeout = config.timeout || 30_000;
+        this.maxRetries = config.maxRetries ?? 3;
+        this.onSessionExpired = config.onSessionExpired || null;
+    }
+    /** Set the re-auth callback (used by VAPAgent to wire login()) */
+    setOnSessionExpired(cb) {
+        this.onSessionExpired = cb;
     }
     setSessionToken(token) {
         // Reject tokens with control characters to prevent header injection
@@ -32,7 +40,20 @@ class VAPClient {
     getBaseUrl() {
         return this.baseUrl;
     }
-    async request(method, path, body) {
+    /** Check if an error is retryable (transient network/server failure) */
+    isRetryable(e) {
+        if (e instanceof VAPError) {
+            // 429 = rate limited, 5xx = server error
+            return e.statusCode === 429 || e.statusCode >= 500;
+        }
+        // Network errors (not our timeout) are retryable
+        if (e instanceof Error && e.name !== 'AbortError') {
+            return true;
+        }
+        return false;
+    }
+    /** Core request logic (single attempt) */
+    async _doRequest(method, path, body) {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), this.timeout);
         try {
@@ -81,6 +102,40 @@ class VAPClient {
             clearTimeout(timer);
         }
     }
+    /** Request with automatic retry (transient failures) and re-auth (401/403) */
+    async request(method, path, body) {
+        let lastError;
+        for (let attempt = 0; attempt < this.maxRetries; attempt++) {
+            try {
+                return await this._doRequest(method, path, body);
+            }
+            catch (e) {
+                lastError = e;
+                // Auth expired — try re-auth callback once (first attempt only)
+                if (e instanceof VAPError && (e.statusCode === 401 || e.statusCode === 403)) {
+                    if (attempt === 0 && this.onSessionExpired) {
+                        try {
+                            await this.onSessionExpired();
+                            continue; // retry with fresh session
+                        }
+                        catch {
+                            throw e; // re-auth failed, throw original error
+                        }
+                    }
+                    throw e; // no callback or already retried
+                }
+                // Only retry on transient errors
+                if (!this.isRetryable(e) || attempt === this.maxRetries - 1) {
+                    throw e;
+                }
+                // Exponential backoff (longer for 429)
+                const baseDelay = (e instanceof VAPError && e.statusCode === 429) ? 5000 : 1000;
+                const delay = baseDelay * Math.pow(2, attempt);
+                await new Promise(r => setTimeout(r, delay));
+            }
+        }
+        throw lastError;
+    }
     // ------------------------------------------
     // Auth endpoints
     // ------------------------------------------
@@ -91,6 +146,59 @@ class VAPClient {
             throw new VAPError('Invalid auth challenge response: missing data', 'PARSE_ERROR', 500);
         }
         return res.data;
+    }
+    /**
+     * Single-call authentication for bridges/frameworks (M1).
+     * Handles: challenge → sign → login → set session token.
+     * Bridges can use VAPClient directly without VAPAgent.
+     *
+     * @param wif - Private key in WIF format
+     * @param verusId - Identity name (e.g. "myagent.agentplatform@")
+     * @param network - 'verus' or 'verustest' (default: 'verustest')
+     * @returns Session token string
+     */
+    async authenticateWithWIF(wif, verusId, network = 'verustest') {
+        // Step 1: Get challenge
+        const { challengeId, challenge } = await this.getAuthChallenge();
+        // Step 2: Sign challenge
+        const signature = (0, signer_js_1.signMessage)(wif, challenge, network);
+        // Step 3: Login
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), this.timeout);
+        let loginRes;
+        try {
+            loginRes = await fetch(`${this.baseUrl}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                signal: controller.signal,
+                body: JSON.stringify({ challengeId, verusId, signature }),
+            });
+        }
+        catch (err) {
+            if (err.name === 'AbortError') {
+                throw new VAPError(`Login timed out after ${this.timeout}ms`, 'TIMEOUT', 408);
+            }
+            throw err;
+        }
+        finally {
+            clearTimeout(timer);
+        }
+        if (!loginRes.ok) {
+            let errMsg = loginRes.statusText;
+            try {
+                const err = await loginRes.json();
+                errMsg = err.error?.message || errMsg;
+            }
+            catch { /* non-JSON */ }
+            throw new VAPError(`Login failed: ${errMsg}`, 'AUTH_FAILED', loginRes.status);
+        }
+        const cookies = loginRes.headers.get('set-cookie');
+        const match = cookies?.match(/verus_session=([^;]+)/);
+        if (!match) {
+            throw new VAPError('Login succeeded but no session cookie returned', 'AUTH_FAILED', 500);
+        }
+        this.setSessionToken(match[1]);
+        return match[1];
     }
     // ------------------------------------------
     // Transaction endpoints

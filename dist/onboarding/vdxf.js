@@ -7,6 +7,7 @@ exports.decodeVdxfValue = decodeVdxfValue;
 exports.buildAgentContentMultimap = buildAgentContentMultimap;
 exports.buildCanonicalAgentUpdate = buildCanonicalAgentUpdate;
 exports.verifyPublishedIdentity = verifyPublishedIdentity;
+exports.decodeContentMultimap = decodeContentMultimap;
 exports.buildUpdateIdentityPayload = buildUpdateIdentityPayload;
 exports.buildUpdateIdentityCommand = buildUpdateIdentityCommand;
 exports.VDXF_KEYS = {
@@ -221,6 +222,117 @@ function verifyPublishedIdentity(params) {
         }
     }
     return { ok: errors.length === 0, errors };
+}
+/**
+ * Reverse-decode a VDXF contentmultimap back into an AgentProfileInput (M3).
+ * Used by A2A Gateway to generate Agent Cards from on-chain identity data.
+ *
+ * @param cmm - On-chain contentmultimap (i-address keys → hex-encoded values)
+ * @returns Decoded agent profile + services
+ */
+function decodeContentMultimap(cmm) {
+    // Build reverse lookup: i-address → [group, field]
+    const reverseMap = new Map();
+    for (const [group, keys] of Object.entries(exports.VDXF_KEYS)) {
+        for (const [field, iAddr] of Object.entries(keys)) {
+            reverseMap.set(iAddr, [group, field]);
+        }
+    }
+    const profile = {};
+    const session = {};
+    const services = [];
+    for (const [key, values] of Object.entries(cmm)) {
+        const mapping = reverseMap.get(key);
+        if (!mapping || !values?.length)
+            continue;
+        const [group, field] = mapping;
+        if (group === 'agent') {
+            switch (field) {
+                case 'name':
+                    profile.name = decodeVdxfValue(values[0]);
+                    break;
+                case 'type':
+                    profile.type = decodeVdxfValue(values[0]);
+                    break;
+                case 'description':
+                    profile.description = decodeVdxfValue(values[0]);
+                    break;
+                case 'category':
+                    profile.category = decodeVdxfValue(values[0]);
+                    break;
+                case 'owner':
+                    profile.owner = decodeVdxfValue(values[0]);
+                    break;
+                case 'tags':
+                    profile.tags = decodeVdxfValue(values[0]);
+                    break;
+                case 'website':
+                    profile.website = decodeVdxfValue(values[0]);
+                    break;
+                case 'avatar':
+                    profile.avatar = decodeVdxfValue(values[0]);
+                    break;
+                case 'protocols':
+                    profile.protocols = decodeVdxfValue(values[0]);
+                    break;
+                case 'endpoints':
+                    profile.endpoints = values.map(v => decodeVdxfValue(v));
+                    break;
+                case 'capabilities':
+                    profile.capabilities = values.map(v => decodeVdxfValue(v));
+                    break;
+                case 'services':
+                    for (const v of values) {
+                        services.push(decodeVdxfValue(v));
+                    }
+                    break;
+            }
+        }
+        else if (group === 'session') {
+            const decoded = decodeVdxfValue(values[0]);
+            switch (field) {
+                case 'duration':
+                    session.duration = decoded;
+                    break;
+                case 'tokenLimit':
+                    session.tokenLimit = decoded;
+                    break;
+                case 'imageLimit':
+                    session.imageLimit = decoded;
+                    break;
+                case 'messageLimit':
+                    session.messageLimit = decoded;
+                    break;
+                case 'maxFileSize':
+                    session.maxFileSize = decoded;
+                    break;
+                case 'allowedFileTypes':
+                    session.allowedFileTypes = decoded;
+                    break;
+            }
+        }
+        else if (group === 'platform') {
+            const decoded = decodeVdxfValue(values[0]);
+            switch (field) {
+                case 'datapolicy':
+                    profile.datapolicy = decoded;
+                    break;
+                case 'trustlevel':
+                    profile.trustlevel = decoded;
+                    break;
+                case 'disputeresolution':
+                    profile.disputeresolution = decoded;
+                    break;
+            }
+        }
+    }
+    if (Object.keys(session).length > 0) {
+        profile.session = session;
+    }
+    return {
+        profile: profile,
+        services,
+    };
 }
 function buildUpdateIdentityPayload(identityName, contentmultimap) {
     const clean = identityName.replace(/@$/, '');
