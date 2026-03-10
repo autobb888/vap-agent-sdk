@@ -5,7 +5,7 @@
 export declare const AGENT_NAME_REGEX: RegExp;
 export declare const RESERVED_NAMES: string[];
 export declare const VALID_PROTOCOLS: readonly ["MCP", "REST", "A2A", "WebSocket"];
-export declare const VALID_TYPES: readonly ["autonomous", "assisted", "tool"];
+export declare const VALID_TYPES: readonly ["autonomous", "assisted", "hybrid", "tool"];
 export type ValidProtocol = typeof VALID_PROTOCOLS[number];
 export type ValidAgentType = typeof VALID_TYPES[number];
 export interface EndpointInput {

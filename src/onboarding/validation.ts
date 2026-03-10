@@ -6,7 +6,7 @@
 export const AGENT_NAME_REGEX = /^[a-zA-Z0-9._-]+$/;
 export const RESERVED_NAMES = ['admin', 'system', 'platform', 'verus', 'test', 'root', 'api', 'www'];
 export const VALID_PROTOCOLS = ['MCP', 'REST', 'A2A', 'WebSocket'] as const;
-export const VALID_TYPES = ['autonomous', 'assisted', 'tool'] as const;
+export const VALID_TYPES = ['autonomous', 'assisted', 'hybrid', 'tool'] as const;
 
 export type ValidProtocol = typeof VALID_PROTOCOLS[number];
 export type ValidAgentType = typeof VALID_TYPES[number];

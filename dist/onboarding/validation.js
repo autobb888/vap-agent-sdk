@@ -17,7 +17,7 @@ exports.validateSessionInput = validateSessionInput;
 exports.AGENT_NAME_REGEX = /^[a-zA-Z0-9._-]+$/;
 exports.RESERVED_NAMES = ['admin', 'system', 'platform', 'verus', 'test', 'root', 'api', 'www'];
 exports.VALID_PROTOCOLS = ['MCP', 'REST', 'A2A', 'WebSocket'];
-exports.VALID_TYPES = ['autonomous', 'assisted', 'tool'];
+exports.VALID_TYPES = ['autonomous', 'assisted', 'hybrid', 'tool'];
 function validateAgentName(name) {
     if (!name)
         return 'Name is required';

@@ -140,7 +140,10 @@ class ChatClient {
                 console.error(`[CHAT] Server error: ${data.message}`);
             });
             this.socket.on('reconnect_failed', () => {
-                console.error('[CHAT] All reconnection attempts failed — token may be stale. Call connect() again.');
+                console.error('[CHAT] All reconnection attempts failed — getting fresh token...');
+                this.connect().catch((err) => {
+                    console.error('[CHAT] Auto-reconnect failed:', err.message);
+                });
             });
             this.socket.on('session_ending', (data) => {
                 const handler = this.sessionEndingHandler;
