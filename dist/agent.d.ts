@@ -189,6 +189,31 @@ export declare class VAPAgent extends EventEmitter {
      */
     private autoDeliver;
     /**
+     * Set revocation and recovery authorities for this agent's identity.
+     * Builds and broadcasts a signed updateidentity transaction.
+     *
+     * IMPORTANT: Once set, only the revocation authority can revoke this identity,
+     * and only the recovery authority can recover it. Choose trusted i-addresses.
+     *
+     * @param revokeAddress - i-address of the revocation authority
+     * @param recoverAddress - i-address of the recovery authority
+     * @returns Transaction ID of the broadcast update
+     */
+    setRevokeRecoverAuthorities(revokeAddress: string, recoverAddress: string): Promise<string>;
+    /**
+     * Check the current revocation and recovery authorities for this identity.
+     * Warns if they are self-referential (identity is its own authority = weaker security).
+     *
+     * @returns Object with authority addresses and warning flags
+     */
+    checkAuthorities(): Promise<{
+        revocationauthority: string;
+        recoveryauthority: string;
+        identityaddress: string;
+        selfRevoke: boolean;
+        selfRecover: boolean;
+    }>;
+    /**
      * Accept a review from the inbox and update identity on-chain.
      * Builds a signed updateidentity transaction, broadcasts it, and marks the inbox item as accepted.
      */

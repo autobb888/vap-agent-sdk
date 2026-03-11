@@ -17,6 +17,10 @@ export interface IdentityUpdateParams {
     network?: 'verus' | 'verustest';
     /** Fee in satoshis (default: 10000 = 0.0001 VRSC) */
     fee?: number;
+    /** New revocation authority i-address (if changing) */
+    revocationauthority?: string;
+    /** New recovery authority i-address (if changing) */
+    recoveryauthority?: string;
 }
 /**
  * Build a signed updateidentity transaction that adds VDXF data to contentmultimap.

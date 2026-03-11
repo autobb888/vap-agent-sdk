@@ -708,6 +708,102 @@ export class VAPAgent extends EventEmitter {
   }
 
   /**
+   * Set revocation and recovery authorities for this agent's identity.
+   * Builds and broadcasts a signed updateidentity transaction.
+   *
+   * IMPORTANT: Once set, only the revocation authority can revoke this identity,
+   * and only the recovery authority can recover it. Choose trusted i-addresses.
+   *
+   * @param revokeAddress - i-address of the revocation authority
+   * @param recoverAddress - i-address of the recovery authority
+   * @returns Transaction ID of the broadcast update
+   */
+  async setRevokeRecoverAuthorities(revokeAddress: string, recoverAddress: string): Promise<string> {
+    if (!this.wif || !this.iAddress) {
+      throw new Error('WIF key and iAddress are required to update identity authorities');
+    }
+
+    // Validate i-address format
+    if (!revokeAddress.startsWith('i') || revokeAddress.length < 30) {
+      throw new Error(`Invalid revocation authority address: ${revokeAddress}`);
+    }
+    if (!recoverAddress.startsWith('i') || recoverAddress.length < 30) {
+      throw new Error(`Invalid recovery authority address: ${recoverAddress}`);
+    }
+
+    console.log(`[VAP Agent] Setting revocation authority: ${revokeAddress}`);
+    console.log(`[VAP Agent] Setting recovery authority: ${recoverAddress}`);
+
+    // Fetch current identity data + UTXOs
+    const [{ data: identityData }, utxoData] = await Promise.all([
+      this._client.getIdentityRaw(),
+      this._client.getUtxos(),
+    ]);
+
+    if (!identityData.prevOutput) {
+      throw new Error('Identity previous output not found — identity may not be confirmed on-chain');
+    }
+
+    // Check if authorities are already set correctly
+    if (identityData.identity.revocationauthority === revokeAddress &&
+        identityData.identity.recoveryauthority === recoverAddress) {
+      console.log(`[VAP Agent] Authorities already set correctly, no update needed`);
+      return 'already-set';
+    }
+
+    // Build identity update transaction with new authorities (no VDXF changes)
+    const signedTxHex = buildIdentityUpdateTx({
+      wif: this.wif,
+      identityData,
+      utxos: utxoData.utxos,
+      vdxfAdditions: {}, // no content changes
+      network: this.networkType,
+      revocationauthority: revokeAddress,
+      recoveryauthority: recoverAddress,
+    });
+
+    // Broadcast
+    const result = await this._client.broadcast(signedTxHex);
+    console.log(`[VAP Agent] ✅ Authorities updated on-chain: ${result.txid}`);
+
+    return result.txid;
+  }
+
+  /**
+   * Check the current revocation and recovery authorities for this identity.
+   * Warns if they are self-referential (identity is its own authority = weaker security).
+   *
+   * @returns Object with authority addresses and warning flags
+   */
+  async checkAuthorities(): Promise<{
+    revocationauthority: string;
+    recoveryauthority: string;
+    identityaddress: string;
+    selfRevoke: boolean;
+    selfRecover: boolean;
+  }> {
+    const { data: identityData } = await this._client.getIdentityRaw();
+    const id = identityData.identity;
+    const selfRevoke = id.revocationauthority === id.identityaddress;
+    const selfRecover = id.recoveryauthority === id.identityaddress;
+
+    if (selfRevoke) {
+      console.warn(`[VAP Agent] ⚠️  Revocation authority is self-referential — if WIF is compromised, attacker can revoke your identity`);
+    }
+    if (selfRecover) {
+      console.warn(`[VAP Agent] ⚠️  Recovery authority is self-referential — if WIF is compromised, attacker controls recovery`);
+    }
+
+    return {
+      revocationauthority: id.revocationauthority,
+      recoveryauthority: id.recoveryauthority,
+      identityaddress: id.identityaddress,
+      selfRevoke,
+      selfRecover,
+    };
+  }
+
+  /**
    * Accept a review from the inbox and update identity on-chain.
    * Builds a signed updateidentity transaction, broadcasts it, and marks the inbox item as accepted.
    */

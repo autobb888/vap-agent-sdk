@@ -71,7 +71,7 @@ function selectUtxos(utxos, targetSatoshis) {
  * @returns Signed raw transaction hex ready for broadcast
  */
 function buildIdentityUpdateTx(params) {
-    const { wif, identityData, utxos, vdxfAdditions, network = 'verustest', fee = DEFAULT_FEE, } = params;
+    const { wif, identityData, utxos, vdxfAdditions, network = 'verustest', fee = DEFAULT_FEE, revocationauthority, recoveryauthority, } = params;
     const networkObj = network === 'verustest'
         ? utxolib.networks.verustest
         : utxolib.networks.verus;
@@ -107,8 +107,8 @@ function buildIdentityUpdateTx(params) {
         name: identityData.identity.name,
         contentmap: identityData.identity.contentmap || {},
         contentmultimap: currentCmm,
-        revocationauthority: identityData.identity.revocationauthority,
-        recoveryauthority: identityData.identity.recoveryauthority,
+        revocationauthority: revocationauthority || identityData.identity.revocationauthority,
+        recoveryauthority: recoveryauthority || identityData.identity.recoveryauthority,
         systemid: identityData.identity.systemid || identityData.identity.parent,
         timelock: 0,
     };

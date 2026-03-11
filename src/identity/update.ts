@@ -27,6 +27,10 @@ export interface IdentityUpdateParams {
   network?: 'verus' | 'verustest';
   /** Fee in satoshis (default: 10000 = 0.0001 VRSC) */
   fee?: number;
+  /** New revocation authority i-address (if changing) */
+  revocationauthority?: string;
+  /** New recovery authority i-address (if changing) */
+  recoveryauthority?: string;
 }
 
 /**
@@ -65,6 +69,8 @@ export function buildIdentityUpdateTx(params: IdentityUpdateParams): string {
     vdxfAdditions,
     network = 'verustest',
     fee = DEFAULT_FEE,
+    revocationauthority,
+    recoveryauthority,
   } = params;
 
   const networkObj = network === 'verustest'
@@ -107,8 +113,8 @@ export function buildIdentityUpdateTx(params: IdentityUpdateParams): string {
     name: identityData.identity.name,
     contentmap: identityData.identity.contentmap || {},
     contentmultimap: currentCmm,
-    revocationauthority: identityData.identity.revocationauthority,
-    recoveryauthority: identityData.identity.recoveryauthority,
+    revocationauthority: revocationauthority || identityData.identity.revocationauthority,
+    recoveryauthority: recoveryauthority || identityData.identity.recoveryauthority,
     systemid: identityData.identity.systemid || identityData.identity.parent,
     timelock: 0,
   };
